@@ -53,7 +53,10 @@ def create(
     caller_symbol: str = "🔔",
 ) -> Logger:
     kwargs = locals()
-    return Logger(**kwargs)
+    if global_:
+        global logger
+    logger = Logger(**kwargs)
+    return logger
 
 
 logger: Logger = create(global_=True, realtime=False, output_html_filepath=None)

@@ -458,7 +458,7 @@ class Logger:
 
     def _submit_console(self, text: str, level: LogLevel | None = None):
         self._log_console += f"{text}\n"
-        if self._realtime and (level is None or self._LOG_LEVEL_TO_INT[level] >= self._min_console_level):
+        if self._realtime and (self._github or level is None or self._LOG_LEVEL_TO_INT[level] >= self._min_console_level):
             _sys.stdout.flush()  # Flush stdout buffer before printing the exception
             _sys.stderr.flush()  # Flush stderr buffer before printing the exception
             print(text, flush=True)
