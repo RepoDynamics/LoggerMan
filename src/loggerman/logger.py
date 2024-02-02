@@ -10,7 +10,7 @@ from functools import wraps as _wraps
 from textwrap import dedent as _dedent
 from pathlib import Path as _Path
 from markitup import html as _html, sgr as _sgr
-from actionman import pprint as _pprint
+import actionman as _actionman
 
 from loggerman.protocol import Stringable as _Stringable
 from loggerman.style import ConsoleHeadingStyle as _ConsoleHeadingStyle, LogStyle as _LogStyle
@@ -106,17 +106,6 @@ class Logger:
             LogLevel.CRITICAL: critical_style,
         }
         self._symbol_caller = caller_symbol
-
-        self._error_title = _pprint.h(
-            title="ERROR",
-            width=11,
-            align="center",
-            margin_top=0,
-            margin_bottom=0,
-            text_styles="bold",
-            text_color=(0, 0, 0),
-            background_color=(255, 0, 0),
-        )
 
         if self._output_html_filepath:
             self._output_html_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -214,7 +203,7 @@ class Logger:
         output_console = f"{heading_console}  [{fully_qualified_name}]"
         if self._github:
             if group and not self._open_grouped_sections:
-                output_console = _pprint.github_group_start(title=output_console, pprint=False)
+                output_console = _actionman.log.group_open(title=output_console, print_=False)
             if group or self._open_grouped_sections:
                 self._open_grouped_sections += 1
         self._submit(console=output_console, file=output_html)
@@ -225,7 +214,7 @@ class Logger:
         if self._open_grouped_sections:
             self._open_grouped_sections -= 1
             if not self._open_grouped_sections:
-                self._submit_console(text=_pprint.github_group_end(pprint=False))
+                self._submit_console(text=_actionman.log.group_close(print_=False))
         if len(self._next_section_num) > 2:
             self._next_section_num.pop()
         else:
@@ -255,27 +244,26 @@ class Logger:
             code_title=code_title,
         )
         if level is LogLevel.DEBUG and self._github:
-            output_console = _pprint.github_log(
-                message_type="debug",
+            output_console = _actionman.log.debug(
                 message=output_console,
-                pprint=False,
+                print_=False,
             )
         self._submit(console=output_console, file=output_html, level=level)
         if level is LogLevel.CRITICAL:
             if sys_exit is None:
                 sys_exit = self._default_exit_code is not None
             if sys_exit and self._open_grouped_sections:
-                self._submit_console(text=_pprint.github_group_end(pprint=False))
+                self._submit_console(text=_actionman.log.group_close(print_=False))
         fatal = level is LogLevel.CRITICAL and sys_exit
         if self._github and level in (
             LogLevel.NOTICE, LogLevel.WARNING, LogLevel.ERROR, LogLevel.CRITICAL
         ):
             caller_name = self._caller_name(stack_up=stack_up)
-            output_annotation = _pprint.github_log(
-                message_type=level.value if level is not LogLevel.CRITICAL else "error",
+            output_annotation = _actionman.log.annotation(
+                typ=level.value if level is not LogLevel.CRITICAL else "error",
                 message=github_annotation_msg,
                 title=f"{'FATAL ERROR: ' if fatal else ''}{self._curr_section} [caller: `{caller_name}`]",
-                pprint=False
+                print_=False
             )
             self._submit_console(text=output_annotation)
         if level is LogLevel.CRITICAL and sys_exit:
