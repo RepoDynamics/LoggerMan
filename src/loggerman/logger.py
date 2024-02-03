@@ -147,6 +147,7 @@ class Logger:
         exception_log_level: LogLevel | _Literal[
             "debug", "info", "notice", "warning", "error", "critical"
         ] | None = None,
+        exception_handler: _Callable | None = None,
         exception_return_value: _Any = None,
         sys_exit: bool | None = None,
         exit_code: int | None = None,
@@ -159,12 +160,13 @@ class Logger:
             try:
                 return func(*args, **kwargs)
             except exceptions_to_catch:
+                handler_return = exception_handler() if exception_handler else None
                 self.log(
                     level=log_level_for_exception,
                     sys_exit=sys_exit,
                     exit_code=exit_code,
                 )
-                return return_value_from_exception
+                return return_value_from_exception or handler_return
 
         if catch_exception is False or (catch_exception is None and not self._sectioner_exception_catch):
             function_caller_func = func_caller_no_catch
