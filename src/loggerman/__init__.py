@@ -17,7 +17,7 @@ def create(
     min_console_log_level: LogLevel | None = LogLevel.DEBUG,
     init_section_number: int = 1,
     exit_code_critical: int | None = 1,
-    sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None = Exception,
+    sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
     sectioner_exception_log_level: LogLevel | _Literal[
         "debug", "info", "notice", "warning", "error", "critical"
     ] = LogLevel.CRITICAL,
