@@ -83,7 +83,9 @@ class Logger:
         self._default_exit_code = exit_code_critical
         self._sectioner_exception_catch: tuple[_Type[Exception], ...] = tuple(
             sectioner_exception_catch
-        ) if isinstance(sectioner_exception_catch, _Sequence) else (sectioner_exception_catch, )
+        ) if isinstance(sectioner_exception_catch, _Sequence) else (
+            tuple() if sectioner_exception_catch is None else (sectioner_exception_catch, )
+        )
         self._sectioner_exception_log_level = sectioner_exception_log_level if isinstance(
             sectioner_exception_log_level, LogLevel
         ) else LogLevel(sectioner_exception_log_level)
@@ -140,10 +142,12 @@ class Logger:
 
     def sectioner(
         self,
-        title: str,
+        title: str = "",
         group: bool = True,
         stack_up: int = 0,
-        catch_exception: _Type[Exception] | _Sequence[_Type[Exception]] | _Literal[False] | None = None,
+        catch_exception_set: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
+        catch_exception_add: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
+        catch_exception_remove: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
         exception_log_level: LogLevel | _Literal[
             "debug", "info", "notice", "warning", "error", "critical"
         ] | None = None,
@@ -168,12 +172,32 @@ class Logger:
                 )
                 return return_value_from_exception or handler_return
 
-        if catch_exception is False or (catch_exception is None and not self._sectioner_exception_catch):
+        if catch_exception_set is not None:
+            exceptions_to_catch = tuple(catch_exception_set) if isinstance(
+                catch_exception_set, _Sequence
+            ) else (catch_exception_set, )
+        else:
+            exceptions_to_catch = list(self._sectioner_exception_catch)
+            if isinstance(catch_exception_add, _Sequence):
+                exceptions_to_catch.extend(catch_exception_add)
+            elif catch_exception_add is not None:
+                exceptions_to_catch.append(catch_exception_add)
+            if isinstance(catch_exception_remove, _Sequence):
+                for exception in catch_exception_remove:
+                    try:
+                        exceptions_to_catch.remove(exception)
+                    except ValueError:
+                        pass
+            elif catch_exception_remove is not None:
+                try:
+                    exceptions_to_catch.remove(catch_exception_remove)
+                except ValueError:
+                    pass
+            exceptions_to_catch = tuple(exceptions_to_catch)
+
+        if not exceptions_to_catch:
             function_caller_func = func_caller_no_catch
         else:
-            exceptions_to_catch = (
-                tuple(catch_exception) if isinstance(catch_exception, _Sequence) else (catch_exception, )
-            ) if catch_exception else self._sectioner_exception_catch
             log_level_for_exception = exception_log_level or self._sectioner_exception_log_level
             return_value_from_exception = (
                 exception_return_value if exception_return_value is not None
@@ -184,9 +208,11 @@ class Logger:
         def section_decorator(func: _Callable):
             @_wraps(func)
             def section_wrapper(*args, **kwargs):
-                self.section(title=title, group=group, stack_up=stack_up)
+                if title:
+                    self.section(title=title, group=group, stack_up=stack_up)
                 result = function_caller_func(func, *args, **kwargs)
-                self.section_end()
+                if title:
+                    self.section_end()
                 return result
             return section_wrapper
         return section_decorator
