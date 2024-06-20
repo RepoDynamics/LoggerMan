@@ -314,7 +314,7 @@ class Logger:
         code: _Stringable = "",
         code_title: _Stringable | None = None,
     ) -> None:
-        self.log(level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title)
+        self.log(level=LogLevel.DEBUG, title=title, msg=msg, code=code, code_title=code_title)
         return
 
     def info(
@@ -324,7 +324,7 @@ class Logger:
         code: _Stringable = "",
         code_title: _Stringable | None = None
     ) -> None:
-        self.log(level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title)
+        self.log(level=LogLevel.INFO, title=title, msg=msg, code=code, code_title=code_title)
         return
 
     def notice(
@@ -336,7 +336,7 @@ class Logger:
         stack_up: int = 0,
     ) -> None:
         self.log(
-            level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
+            level=LogLevel.NOTICE, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
         )
         return
 
@@ -362,7 +362,7 @@ class Logger:
         stack_up: int = 0,
     ) -> None:
         self.log(
-            level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
+            level=LogLevel.ERROR, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
         )
         return
 
@@ -377,7 +377,7 @@ class Logger:
         stack_up: int = 0,
     ):
         self.log(
-            level=LogLevel.WARNING,
+            level=LogLevel.CRITICAL,
             title=title,
             msg=msg,
             code=code,
