@@ -6,12 +6,14 @@ from pathlib import Path as _Path
 
 from markitup import sgr
 
-from loggerman.logger import Logger, LogLevel
+from loggerman.logger import Logger, GlobalLogger, LogLevel
 from loggerman.style import ConsoleHeadingStyle, LogStyle
 
 
+logger = GlobalLogger()
+
+
 def create(
-    global_: bool = False,
     realtime: bool = True,
     github: bool = False,
     min_console_log_level: LogLevel | None = LogLevel.DEBUG,
@@ -53,13 +55,4 @@ def create(
     caller_symbol: str = "🔔",
 ) -> Logger:
     kwargs = locals()
-    kwargs.pop("global_")
-    if global_:
-        global logger
-    logger = Logger(**kwargs)
-    return logger
-
-
-logger: Logger = create(
-    global_=True, realtime=False, output_html_filepath=None, sectioner_exception_catch=None
-)
+    return Logger(**kwargs)

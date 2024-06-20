@@ -157,57 +157,58 @@ class Logger:
         exit_code: int | None = None,
     ):
         """Decorator for sectioning a function or method."""
-        def func_caller_no_catch(func: _Callable, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        def fun_caller_with_catch(func: _Callable, *args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except exceptions_to_catch:
-                handler_return = exception_handler() if exception_handler else None
-                self.log(
-                    level=log_level_for_exception,
-                    sys_exit=sys_exit,
-                    exit_code=exit_code,
-                )
-                return return_value_from_exception or handler_return
-
-        if catch_exception_set is not None:
-            exceptions_to_catch = tuple(catch_exception_set) if isinstance(
-                catch_exception_set, _Sequence
-            ) else (catch_exception_set, )
-        else:
-            exceptions_to_catch = list(self._sectioner_exception_catch)
-            if isinstance(catch_exception_add, _Sequence):
-                exceptions_to_catch.extend(catch_exception_add)
-            elif catch_exception_add is not None:
-                exceptions_to_catch.append(catch_exception_add)
-            if isinstance(catch_exception_remove, _Sequence):
-                for exception in catch_exception_remove:
-                    try:
-                        exceptions_to_catch.remove(exception)
-                    except ValueError:
-                        pass
-            elif catch_exception_remove is not None:
-                try:
-                    exceptions_to_catch.remove(catch_exception_remove)
-                except ValueError:
-                    pass
-            exceptions_to_catch = tuple(exceptions_to_catch)
-
-        if not exceptions_to_catch:
-            function_caller_func = func_caller_no_catch
-        else:
-            log_level_for_exception = exception_log_level or self._sectioner_exception_log_level
-            return_value_from_exception = (
-                exception_return_value if exception_return_value is not None
-                else self._sectioner_exception_return
-            )
-            function_caller_func = fun_caller_with_catch
 
         def section_decorator(func: _Callable):
             @_wraps(func)
             def section_wrapper(*args, **kwargs):
+                def func_caller_no_catch(func: _Callable, *args, **kwargs):
+                    return func(*args, **kwargs)
+
+                def fun_caller_with_catch(func: _Callable, *args, **kwargs):
+                    try:
+                        return func(*args, **kwargs)
+                    except exceptions_to_catch:
+                        handler_return = exception_handler() if exception_handler else None
+                        self.log(
+                            level=log_level_for_exception,
+                            sys_exit=sys_exit,
+                            exit_code=exit_code,
+                        )
+                        return return_value_from_exception or handler_return
+
+                if catch_exception_set is not None:
+                    exceptions_to_catch = tuple(catch_exception_set) if isinstance(
+                        catch_exception_set, _Sequence
+                    ) else (catch_exception_set,)
+                else:
+                    exceptions_to_catch = list(self._sectioner_exception_catch)
+                    if isinstance(catch_exception_add, _Sequence):
+                        exceptions_to_catch.extend(catch_exception_add)
+                    elif catch_exception_add is not None:
+                        exceptions_to_catch.append(catch_exception_add)
+                    if isinstance(catch_exception_remove, _Sequence):
+                        for exception in catch_exception_remove:
+                            try:
+                                exceptions_to_catch.remove(exception)
+                            except ValueError:
+                                pass
+                    elif catch_exception_remove is not None:
+                        try:
+                            exceptions_to_catch.remove(catch_exception_remove)
+                        except ValueError:
+                            pass
+                    exceptions_to_catch = tuple(exceptions_to_catch)
+
+                if not exceptions_to_catch:
+                    function_caller_func = func_caller_no_catch
+                else:
+                    log_level_for_exception = exception_log_level or self._sectioner_exception_log_level
+                    return_value_from_exception = (
+                        exception_return_value if exception_return_value is not None
+                        else self._sectioner_exception_return
+                    )
+                    function_caller_func = fun_caller_with_catch
+
                 if title:
                     self.section(title=title, group=group, stack_up=stack_up)
                 result = function_caller_func(func, *args, **kwargs)
@@ -521,3 +522,61 @@ class Logger:
         margin_top = "\n" * margin_top
         margin_bottom = "\n" * margin_bottom
         return f"{margin_top}{heading_box}{margin_bottom}"
+
+
+class GlobalLogger(Logger):
+
+    def __init__(self):
+        self._initialized = False
+        return
+
+    def initialize(
+        self,
+        realtime: bool = True,
+        github: bool = False,
+        min_console_log_level: LogLevel | None = LogLevel.DEBUG,
+        init_section_number: int = 1,
+        exit_code_critical: int | None = 1,
+        sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
+        sectioner_exception_log_level: LogLevel | _Literal[
+            "debug", "info", "notice", "warning", "error", "critical"
+        ] = LogLevel.CRITICAL,
+        sectioner_exception_return_value: _Any = None,
+        output_html_filepath: str | _Path | None = "log.html",
+        root_heading: str = "Log",
+        html_title: str = "Log",
+        html_style: str = "",
+        h1_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(150, 0, 170))
+        ),
+        h2_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(25, 100, 175))
+        ),
+        h3_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(100, 160, 0))
+        ),
+        h4_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(200, 150, 0))
+        ),
+        h5_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(240, 100, 0))
+        ),
+        h6_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(220, 0, 35))
+        ),
+        debug_style: _LogStyle = _LogStyle(symbol="🔘"),
+        info_style: _LogStyle = _LogStyle(symbol="ℹ️"),
+        notice_style: _LogStyle = _LogStyle(symbol="❗"),
+        warning_style: _LogStyle = _LogStyle(symbol="🚨"),
+        error_style: _LogStyle = _LogStyle(symbol="🚫"),
+        critical_style: _LogStyle = _LogStyle(symbol="⛔"),
+        caller_symbol: str = "🔔",
+    ):
+        if self._initialized:
+            return
+        kwargs = locals()
+
+        kwargs.pop("self")
+        kwargs.pop("__class__")
+        super().__init__(**kwargs)
+        return
