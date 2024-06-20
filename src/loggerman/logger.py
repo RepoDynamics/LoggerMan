@@ -159,8 +159,10 @@ class Logger:
         """Decorator for sectioning a function or method."""
 
         def section_decorator(func: _Callable):
+
             @_wraps(func)
             def section_wrapper(*args, **kwargs):
+
                 def func_caller_no_catch(func: _Callable, *args, **kwargs):
                     return func(*args, **kwargs)
 
@@ -227,7 +229,10 @@ class Logger:
         heading_html = _html.h(section_level, self._curr_section)
         output_html = f"{heading_html}\n{caller_entry_html}"
         heading_console = self._format_heading_console(
-            self._curr_section, **self._h_style[section_level]._asdict()
+            self._curr_section,
+            width=self._h_style[section_level].width,
+            align=self._h_style[section_level].align,
+            sgr_sequence=self._h_style[section_level].sgr_sequence,
         )
         output_console = f"{heading_console}  [{fully_qualified_name}]"
         if self._github:
@@ -235,7 +240,9 @@ class Logger:
                 output_console = _actionman.log.group_open(title=output_console, print_=False)
             if group or self._open_grouped_sections:
                 self._open_grouped_sections += 1
-        self._submit(console=output_console, file=output_html)
+        margin_top = "\n" * self._h_style[section_level].margin_top
+        margin_bottom = "\n" * self._h_style[section_level].margin_bottom
+        self._submit(console=f"{margin_top}{output_console}{margin_bottom}", file=output_html)
         self._next_section_num.append(1)
         return
 
@@ -508,8 +515,6 @@ class Logger:
         title: str,
         width: int,
         align: _Literal["left", "right", "center"],
-        margin_top: int,
-        margin_bottom: int,
         sgr_sequence: str,
     ) -> str:
         if align == "left":
@@ -519,9 +524,7 @@ class Logger:
         else:
             aligned_title = title.center(width)
         heading_box = _sgr.format(text=aligned_title, control_sequence=sgr_sequence)
-        margin_top = "\n" * margin_top
-        margin_bottom = "\n" * margin_bottom
-        return f"{margin_top}{heading_box}{margin_bottom}"
+        return heading_box
 
 
 class GlobalLogger(Logger):
