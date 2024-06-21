@@ -175,6 +175,7 @@ class Logger:
                             level=log_level_for_exception,
                             sys_exit=sys_exit,
                             exit_code=exit_code,
+                            stack_up=stack_up+1,
                         )
                         return return_value_from_exception or handler_return
 
@@ -212,7 +213,7 @@ class Logger:
                     function_caller_func = fun_caller_with_catch
 
                 if title:
-                    self.section(title=title, group=group, stack_up=stack_up)
+                    self.section(title=title, group=group, stack_up=stack_up+1)
                 result = function_caller_func(func, *args, **kwargs)
                 if title:
                     self.section_end()
@@ -316,8 +317,11 @@ class Logger:
         msg: _Stringable = "",
         code: _Stringable = "",
         code_title: _Stringable | None = None,
+        stack_up: int = 0,
     ) -> None:
-        self.log(level=LogLevel.DEBUG, title=title, msg=msg, code=code, code_title=code_title)
+        self.log(
+            level=LogLevel.DEBUG, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        )
         return
 
     def info(
@@ -325,9 +329,12 @@ class Logger:
         title: _Stringable = "",
         msg: _Stringable = "",
         code: _Stringable = "",
-        code_title: _Stringable | None = None
+        code_title: _Stringable | None = None,
+        stack_up: int = 0,
     ) -> None:
-        self.log(level=LogLevel.INFO, title=title, msg=msg, code=code, code_title=code_title)
+        self.log(
+            level=LogLevel.INFO, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        )
         return
 
     def notice(
@@ -339,7 +346,7 @@ class Logger:
         stack_up: int = 0,
     ) -> None:
         self.log(
-            level=LogLevel.NOTICE, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
+            level=LogLevel.NOTICE, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
         )
         return
 
@@ -352,7 +359,7 @@ class Logger:
         stack_up: int = 0,
     ) -> None:
         self.log(
-            level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
+            level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
         )
         return
 
@@ -365,7 +372,7 @@ class Logger:
         stack_up: int = 0,
     ) -> None:
         self.log(
-            level=LogLevel.ERROR, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up
+            level=LogLevel.ERROR, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
         )
         return
 
@@ -387,7 +394,7 @@ class Logger:
             code_title=code_title,
             sys_exit=sys_exit,
             exit_code=exit_code,
-            stack_up=stack_up,
+            stack_up=stack_up+1,
         )
         return
 
