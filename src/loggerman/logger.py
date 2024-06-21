@@ -303,6 +303,9 @@ class Logger:
             )
             self._submit_console(text=output_annotation)
         if level is LogLevel.CRITICAL and sys_exit:
+            _sys.stdout.flush()
+            _sys.stderr.flush()
+            _sys.stdin.flush()
             exit_code = exit_code or self._default_exit_code
             _sys.exit(exit_code)
         return
@@ -405,7 +408,7 @@ class Logger:
         code_title: _Stringable | None,
     ):
         style = self._level_style[level]
-        curr_exception = sys.exception()
+        curr_exception = sys.exc_info()[1]
         title_str = str(title) or (curr_exception.__class__.__name__ if curr_exception else "")
         msg_str = str(message) or (str(curr_exception) if curr_exception else "")
         code_str = str(code)
