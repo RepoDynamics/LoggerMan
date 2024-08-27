@@ -194,8 +194,6 @@ class Logger:
         exit_code: int | None = None,
     ):
         """Decorator for sectioning a function or method."""
-        if not self._initialized:
-            self.initialize()
 
         def section_decorator(func: _Callable):
 
