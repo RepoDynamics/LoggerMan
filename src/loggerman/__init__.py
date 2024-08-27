@@ -4,13 +4,13 @@
 from typing import Literal as _Literal, Type as _Type, Sequence as _Sequence, Any as _Any
 from pathlib import Path as _Path
 
-from markitup import sgr
+import ansi_sgr as sgr
 
-from loggerman.logger import Logger, GlobalLogger, LogLevel
+from loggerman.logger import Logger, LogLevel
 from loggerman.style import ConsoleHeadingStyle, LogStyle
 
 
-logger = GlobalLogger()
+logger = Logger()
 
 
 def create(
@@ -55,4 +55,4 @@ def create(
     caller_symbol: str = "🔔",
 ) -> Logger:
     kwargs = locals()
-    return Logger(**kwargs)
+    return Logger().initialize(**kwargs)

@@ -9,7 +9,9 @@ import traceback as _traceback
 from functools import wraps as _wraps
 from textwrap import dedent as _dedent
 from pathlib import Path as _Path
-from markitup import html as _html, sgr as _sgr
+
+from markitup.html import elem as _html
+import ansi_sgr as _sgr
 import actionman as _actionman
 
 from loggerman.protocol import Stringable as _Stringable
@@ -37,40 +39,77 @@ class Logger:
         None: 6,
     }
 
-    def __init__(
+    def __init__(self):
+        self._initialized: bool = False
+        self._realtime: bool = False
+        self._github: bool = False
+        self._min_console_level: int = 0
+        self._next_section_num: list[int] = []
+        self._default_exit_code: int | None = None
+        self._sectioner_exception_catch: tuple[_Type[Exception], ...] = tuple()
+        self.__sectioner_exception_log_level: LogLevel = LogLevel.CRITICAL
+        self._sectioner_exception_return_val: _Any = None
+        self._output_html_filepath: _Path | None = None
+        self._h_style: dict[int, _ConsoleHeadingStyle] = {}
+        self._level_style: dict[LogLevel, _LogStyle] = {}
+        self._symbol_caller: str = ""
+        self._curr_section: str = ""
+        self._open_grouped_sections: int = 0
+        self._out_of_section: bool = False
+        self._log_console: str = ""
+        self._log_html: str = ""
+        self._html_file_end: str = ""
+        self._html_num_chars_at_end: int = 0
+        return
+
+    def initialize(
         self,
-        realtime: bool,
-        github: bool,
-        min_console_log_level: LogLevel | None,
-        init_section_number: int,
-        exit_code_critical: int | None,
-        sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None,
+        realtime: bool = False,
+        github: bool = False,
+        min_console_log_level: LogLevel | None = LogLevel.DEBUG,
+        init_section_num: int = 1,
+        exit_code_critical: int | None = 1,
+        sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
         sectioner_exception_log_level: LogLevel | _Literal[
             "debug", "info", "notice", "warning", "error", "critical"
-        ],
-        sectioner_exception_return_value: _Any,
-        output_html_filepath: str | _Path | None,
-        root_heading: str,
-        html_title: str,
-        html_style: str,
-        h1_style: _ConsoleHeadingStyle,
-        h2_style: _ConsoleHeadingStyle,
-        h3_style: _ConsoleHeadingStyle,
-        h4_style: _ConsoleHeadingStyle,
-        h5_style: _ConsoleHeadingStyle,
-        h6_style: _ConsoleHeadingStyle,
-        debug_style: _LogStyle,
-        info_style: _LogStyle,
-        notice_style: _LogStyle,
-        warning_style: _LogStyle,
-        error_style: _LogStyle,
-        critical_style: _LogStyle,
-        caller_symbol: str,
+        ] = LogLevel.CRITICAL,
+        sectioner_exception_return_value: _Any = None,
+        output_html_filepath: str | _Path | None = "log.html",
+        root_heading: str = "Log",
+        html_title: str = "Log",
+        html_style: str = "",
+        h1_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(150, 0, 170))
+        ),
+        h2_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(25, 100, 175))
+        ),
+        h3_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(100, 160, 0))
+        ),
+        h4_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(200, 150, 0))
+        ),
+        h5_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(240, 100, 0))
+        ),
+        h6_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
+            sgr_sequence=_sgr.style(text_styles="bold", text_color=(220, 0, 35))
+        ),
+        debug_style: _LogStyle = _LogStyle(symbol="🔘"),
+        info_style: _LogStyle = _LogStyle(symbol="ℹ️"),
+        notice_style: _LogStyle = _LogStyle(symbol="❗"),
+        warning_style: _LogStyle = _LogStyle(symbol="🚨"),
+        error_style: _LogStyle = _LogStyle(symbol="🚫"),
+        critical_style: _LogStyle = _LogStyle(symbol="⛔"),
+        caller_symbol: str = "🔔",
     ):
+        if self._initialized:
+            return
         self._realtime = realtime
         self._github = github
         self._min_console_level = self._LOG_LEVEL_TO_INT[min_console_log_level]
-        self._next_section_num = [init_section_number]
+        self._next_section_num = [init_section_num]
         error_msg_exit_code = (
             "Argument `exit_code_on_error` must be a positive integer or None, "
             f"but got '{exit_code_critical}' (type: {type(exit_code_critical)})."
@@ -84,12 +123,12 @@ class Logger:
         self._sectioner_exception_catch: tuple[_Type[Exception], ...] = tuple(
             sectioner_exception_catch
         ) if isinstance(sectioner_exception_catch, _Sequence) else (
-            tuple() if sectioner_exception_catch is None else (sectioner_exception_catch, )
+            tuple() if sectioner_exception_catch is None else (sectioner_exception_catch,)
         )
         self._sectioner_exception_log_level = sectioner_exception_log_level if isinstance(
             sectioner_exception_log_level, LogLevel
         ) else LogLevel(sectioner_exception_log_level)
-        self._sectioner_exception_return = sectioner_exception_return_value
+        self._sectioner_exception_return_val = sectioner_exception_return_value
         self._output_html_filepath = _Path(output_html_filepath).resolve() if output_html_filepath else None
         self._h_style = {
             1: h1_style,
@@ -121,12 +160,12 @@ class Logger:
         self._log_console: str = ""
         html_intro = _dedent(
             f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <title>{html_title}</title>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <title>{html_title}</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
             """
         ).lstrip()
         if html_style:
@@ -137,6 +176,7 @@ class Logger:
         if self._realtime and self._output_html_filepath:
             with open(self._output_html_filepath, 'w') as f:
                 f.write(f"{self._log_html}{self._html_file_end}")
+        self._initialized = True
         self.section(title=root_heading, stack_up=1)
         return
 
@@ -157,6 +197,8 @@ class Logger:
         exit_code: int | None = None,
     ):
         """Decorator for sectioning a function or method."""
+        if not self._initialized:
+            self.initialize()
 
         def section_decorator(func: _Callable):
 
@@ -169,8 +211,8 @@ class Logger:
                 def fun_caller_with_catch(func: _Callable, *args, **kwargs):
                     try:
                         return func(*args, **kwargs)
-                    except exceptions_to_catch:
-                        handler_return = exception_handler() if exception_handler else None
+                    except exceptions_to_catch as e:
+                        handler_return = exception_handler(e) if exception_handler else None
                         self.log(
                             level=log_level_for_exception,
                             sys_exit=sys_exit,
@@ -208,7 +250,7 @@ class Logger:
                     log_level_for_exception = exception_log_level or self._sectioner_exception_log_level
                     return_value_from_exception = (
                         exception_return_value if exception_return_value is not None
-                        else self._sectioner_exception_return
+                        else self._sectioner_exception_return_val
                     )
                     function_caller_func = fun_caller_with_catch
 
@@ -222,6 +264,8 @@ class Logger:
         return section_decorator
 
     def section(self, title: str, group: bool = False, stack_up: int = 0):
+        if not self._initialized:
+            self.initialize()
         section_level = min(len(self._next_section_num), 6)
         section_num = ".".join([str(num) for num in self._next_section_num])
         self._curr_section = f"{section_num}  {title}"
@@ -272,6 +316,8 @@ class Logger:
         exit_code: int | None = None,
         stack_up: int = 0,
     ):
+        if not self._initialized:
+            self.initialize()
         level = level if isinstance(level, LogLevel) else LogLevel(level)
         output_console, output_html, github_annotation_msg = self._format_entry(
             level=level,
@@ -483,7 +529,7 @@ class Logger:
     def _submit(
         self,
         console: str,
-        file: str | _html.Element | _html.ElementCollection,
+        file: str | _html.Element,
         level: LogLevel | None = None
     ):
         self._submit_console(text=console, level=level)
@@ -498,7 +544,7 @@ class Logger:
             print(text, flush=True)
         return
 
-    def _submit_html(self, html: str | _html.Element | _html.ElementCollection):
+    def _submit_html(self, html: str | _html.Element):
         file_entry = f"{html}\n"
         self._log_html += file_entry
         if self._realtime and self._output_html_filepath:
@@ -535,61 +581,3 @@ class Logger:
             aligned_title = title.center(width)
         heading_box = _sgr.format(text=aligned_title, control_sequence=sgr_sequence)
         return heading_box
-
-
-class GlobalLogger(Logger):
-
-    def __init__(self):
-        self._initialized = False
-        return
-
-    def initialize(
-        self,
-        realtime: bool = True,
-        github: bool = False,
-        min_console_log_level: LogLevel | None = LogLevel.DEBUG,
-        init_section_number: int = 1,
-        exit_code_critical: int | None = 1,
-        sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
-        sectioner_exception_log_level: LogLevel | _Literal[
-            "debug", "info", "notice", "warning", "error", "critical"
-        ] = LogLevel.CRITICAL,
-        sectioner_exception_return_value: _Any = None,
-        output_html_filepath: str | _Path | None = "log.html",
-        root_heading: str = "Log",
-        html_title: str = "Log",
-        html_style: str = "",
-        h1_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(150, 0, 170))
-        ),
-        h2_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(25, 100, 175))
-        ),
-        h3_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(100, 160, 0))
-        ),
-        h4_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(200, 150, 0))
-        ),
-        h5_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(240, 100, 0))
-        ),
-        h6_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(220, 0, 35))
-        ),
-        debug_style: _LogStyle = _LogStyle(symbol="🔘"),
-        info_style: _LogStyle = _LogStyle(symbol="ℹ️"),
-        notice_style: _LogStyle = _LogStyle(symbol="❗"),
-        warning_style: _LogStyle = _LogStyle(symbol="🚨"),
-        error_style: _LogStyle = _LogStyle(symbol="🚫"),
-        critical_style: _LogStyle = _LogStyle(symbol="⛔"),
-        caller_symbol: str = "🔔",
-    ):
-        if self._initialized:
-            return
-        kwargs = locals()
-
-        kwargs.pop("self")
-        kwargs.pop("__class__")
-        super().__init__(**kwargs)
-        return

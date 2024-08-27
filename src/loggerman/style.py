@@ -1,5 +1,5 @@
 from typing import NamedTuple as _NamedTuple, Literal as _Literal
-from markitup import sgr as _sgr
+import ansi_sgr as _sgr
 
 
 class ConsoleHeadingStyle(_NamedTuple):
