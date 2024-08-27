@@ -148,10 +148,6 @@ class Logger:
         }
         self._symbol_caller = caller_symbol
 
-        if self._output_html_filepath:
-            self._output_html_filepath.parent.mkdir(parents=True, exist_ok=True)
-            self._output_html_filepath.touch(exist_ok=True)
-
         self._curr_section = ""
 
         self._open_grouped_sections = 0
@@ -174,6 +170,7 @@ class Logger:
         self._html_file_end = "</body>\n</html>\n"
         self._html_num_chars_at_end = -len(self._html_file_end)
         if self._realtime and self._output_html_filepath:
+            self._output_html_filepath.parent.mkdir(parents=True, exist_ok=True)
             with open(self._output_html_filepath, 'w') as f:
                 f.write(f"{self._log_html}{self._html_file_end}")
         self._initialized = True
