@@ -1,349 +1,249 @@
+from __future__ import annotations
+
 import sys
 from enum import Enum as _Enum
-from typing import (
-    Literal as _Literal, Callable as _Callable, Type as _Type, Sequence as _Sequence, Any as _Any
-)
+import datetime as _datetime
+from typing import NamedTuple as _NamedTuple, Sequence as _Sequence, TYPE_CHECKING as _TYPE_CHECKING
 import inspect as _inspect
 import sys as _sys
 import traceback as _traceback
 from functools import wraps as _wraps
-from textwrap import dedent as _dedent
-from pathlib import Path as _Path
 
-from markitup.html import elem as _html
 import ansi_sgr as _sgr
 import actionman as _actionman
+import mdit as _mdit
 
-from loggerman.protocol import Stringable as _Stringable
-from loggerman.style import ConsoleHeadingStyle as _ConsoleHeadingStyle, LogStyle as _LogStyle
+from loggerman import style as _style
+
+
+if _TYPE_CHECKING:
+    from typing import Literal, Sequence, Callable, Type
+    from pyprotocol import Stringable
+    from loggerman.style import LogLevelStyle
 
 
 class LogLevel(_Enum):
-    DEBUG = "debug"
-    INFO = "info"
-    NOTICE = "notice"
-    WARNING = "warning"
-    ERROR = "error"
-    CRITICAL = "critical"
+    DEBUG = 0
+    SUCCESS = 1
+    INFO = 2
+    NOTICE = 3
+    WARNING = 4
+    ERROR = 5
+    CRITICAL = 6
+
+class _LogLevelData(_NamedTuple):
+    level: LogLevel
+    style: LogLevelStyle
 
 
 class Logger:
 
-    _LOG_LEVEL_TO_INT = {
-        LogLevel.DEBUG: 0,
-        LogLevel.INFO: 1,
-        LogLevel.NOTICE: 2,
-        LogLevel.WARNING: 3,
-        LogLevel.ERROR: 4,
-        LogLevel.CRITICAL: 5,
-        None: 6,
-    }
-
     def __init__(self):
+        self._doc: _mdit.Document | None = None
         self._initialized: bool = False
-        self._realtime: bool = False
+        self._realtime_levels: list = []
         self._github: bool = False
-        self._min_console_level: int = 0
+        self._github_debug: bool = True
         self._next_section_num: list[int] = []
         self._default_exit_code: int | None = None
-        self._sectioner_exception_catch: tuple[_Type[Exception], ...] = tuple()
-        self.__sectioner_exception_log_level: LogLevel = LogLevel.CRITICAL
-        self._sectioner_exception_return_val: _Any = None
-        self._output_html_filepath: _Path | None = None
-        self._h_style: dict[int, _ConsoleHeadingStyle] = {}
-        self._level_style: dict[LogLevel, _LogStyle] = {}
-        self._symbol_caller: str = ""
-        self._curr_section: str = ""
-        self._open_grouped_sections: int = 0
+        self._exception_handler: dict[Type[Exception], Callable] | None = None
+        self._level: dict[str, _LogLevelData] = {}
+        self._emoji_caller: str = ""
+        self._emoji_time: str = ""
         self._out_of_section: bool = False
-        self._log_console: str = ""
-        self._log_html: str = ""
-        self._html_file_end: str = ""
-        self._html_num_chars_at_end: int = 0
+        self._target_config_md: dict[str, _mdit.TargetConfig | dict] | None = None
+        self._target_config_ansi: _mdit.ANSITargetConfig | dict | None = None
         return
+
+    @property
+    def report(self) -> _mdit.Document:
+        return self._doc
 
     def initialize(
         self,
-        realtime: bool = False,
+        realtime_levels: Sequence[str | int | LogLevel] | None = None,
         github: bool = False,
-        min_console_log_level: LogLevel | None = LogLevel.DEBUG,
-        init_section_num: int = 1,
-        exit_code_critical: int | None = 1,
-        sectioner_exception_catch: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
-        sectioner_exception_log_level: LogLevel | _Literal[
-            "debug", "info", "notice", "warning", "error", "critical"
-        ] = LogLevel.CRITICAL,
-        sectioner_exception_return_value: _Any = None,
-        output_html_filepath: str | _Path | None = "log.html",
-        root_heading: str = "Log",
-        html_title: str = "Log",
-        html_style: str = "",
-        h1_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(150, 0, 170))
-        ),
-        h2_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(25, 100, 175))
-        ),
-        h3_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(100, 160, 0))
-        ),
-        h4_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(200, 150, 0))
-        ),
-        h5_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(240, 100, 0))
-        ),
-        h6_style: _ConsoleHeadingStyle = _ConsoleHeadingStyle(
-            sgr_sequence=_sgr.style(text_styles="bold", text_color=(220, 0, 35))
-        ),
-        debug_style: _LogStyle = _LogStyle(symbol="🔘"),
-        info_style: _LogStyle = _LogStyle(symbol="ℹ️"),
-        notice_style: _LogStyle = _LogStyle(symbol="❗"),
-        warning_style: _LogStyle = _LogStyle(symbol="🚨"),
-        error_style: _LogStyle = _LogStyle(symbol="🚫"),
-        critical_style: _LogStyle = _LogStyle(symbol="⛔"),
-        caller_symbol: str = "🔔",
+        github_debug: bool = True,
+        title_number: int | _Sequence[int] = 1,
+        exception_handler: dict[Type[Exception], Callable] | None = None,
+        exit_code_critical: int | None = None,
+        target_config_md: dict[str, _mdit.TargetConfig | dict] | None = None,
+        target_config_ansi: _mdit.ANSITargetConfig | dict | None = None,
+        level_style_debug: LogLevelStyle = _style.log_level(admo_class="hint", gh_title_prefix="🔘"),
+        level_style_success: LogLevelStyle = _style.log_level(admo_class="seealso", gh_title_prefix="✅"),
+        level_style_info: LogLevelStyle = _style.log_level(admo_class="note", gh_title_prefix="ℹ️"),
+        level_style_notice: LogLevelStyle = _style.log_level(admo_class="attention", gh_title_prefix="❗"),
+        level_style_warning: LogLevelStyle = _style.log_level(admo_class="warning", gh_title_prefix="🚨"),
+        level_style_error: LogLevelStyle = _style.log_level(admo_class="danger", dropdown=False, gh_title_prefix="🚫"),
+        level_style_critical: LogLevelStyle = _style.log_level(admo_class="error", dropdown=False, gh_title_prefix="⛔"),
+        prefix_caller: str = "🔔",
+        prefix_time: str = "⏰",
     ):
+        def process_exit_code():
+            error_msg_exit_code = (
+                "Argument `exit_code_on_error` must be a positive integer or None, "
+                f"but got '{exit_code_critical}' (type: {type(exit_code_critical)})."
+            )
+            if isinstance(exit_code_critical, int):
+                if exit_code_critical <= 0:
+                    raise ValueError(error_msg_exit_code)
+            elif exit_code_critical is not None:
+                raise TypeError(error_msg_exit_code)
+            self._default_exit_code = exit_code_critical
+            return
+
         if self._initialized:
             return
-        self._realtime = realtime
+        if realtime_levels:
+            for level in realtime_levels:
+                self._realtime_levels.append(self._get_level_name(level))
         self._github = github
-        self._min_console_level = self._LOG_LEVEL_TO_INT[min_console_log_level]
-        self._next_section_num = [init_section_num]
-        error_msg_exit_code = (
-            "Argument `exit_code_on_error` must be a positive integer or None, "
-            f"but got '{exit_code_critical}' (type: {type(exit_code_critical)})."
-        )
-        if isinstance(exit_code_critical, int):
-            if exit_code_critical <= 0:
-                raise ValueError(error_msg_exit_code)
-        elif exit_code_critical is not None:
-            raise TypeError(error_msg_exit_code)
-        self._default_exit_code = exit_code_critical
-        self._sectioner_exception_catch: tuple[_Type[Exception], ...] = tuple(
-            sectioner_exception_catch
-        ) if isinstance(sectioner_exception_catch, _Sequence) else (
-            tuple() if sectioner_exception_catch is None else (sectioner_exception_catch,)
-        )
-        self._sectioner_exception_log_level = sectioner_exception_log_level if isinstance(
-            sectioner_exception_log_level, LogLevel
-        ) else LogLevel(sectioner_exception_log_level)
-        self._sectioner_exception_return_val = sectioner_exception_return_value
-        self._output_html_filepath = _Path(output_html_filepath).resolve() if output_html_filepath else None
-        self._h_style = {
-            1: h1_style,
-            2: h2_style,
-            3: h3_style,
-            4: h4_style,
-            5: h5_style,
-            6: h6_style,
+        self._github_debug = github_debug
+        self._next_section_num = list(title_number) if isinstance(title_number, Sequence) else [1] * title_number
+        self._exception_handler = exception_handler
+        process_exit_code()
+        self._level = {
+            "debug": _LogLevelData(level=LogLevel.DEBUG, style=level_style_debug),
+            "success": _LogLevelData(level=LogLevel.SUCCESS, style=level_style_success),
+            "info": _LogLevelData(level=LogLevel.INFO, style=level_style_info),
+            "notice": _LogLevelData(level=LogLevel.NOTICE, style=level_style_notice),
+            "warning": _LogLevelData(level=LogLevel.WARNING, style=level_style_warning),
+            "error": _LogLevelData(level=LogLevel.ERROR, style=level_style_error),
+            "critical": _LogLevelData(level=LogLevel.CRITICAL, style=level_style_critical),
         }
-        self._level_style = {
-            LogLevel.DEBUG: debug_style,
-            LogLevel.INFO: info_style,
-            LogLevel.NOTICE: notice_style,
-            LogLevel.WARNING: warning_style,
-            LogLevel.ERROR: error_style,
-            LogLevel.CRITICAL: critical_style,
-        }
-        self._symbol_caller = caller_symbol
-
-        self._curr_section = ""
-
-        self._open_grouped_sections = 0
-        self._out_of_section: bool = False
-
-        self._log_console: str = ""
-        html_intro = _dedent(
-            f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                <title>{html_title}</title>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            """
-        ).lstrip()
-        if html_style:
-            html_intro += f"<style>\n{html_style}\n</style>\n"
-        self._log_html: str = f"{html_intro}</head>\n<body>\n"
-        self._html_file_end = "</body>\n</html>\n"
-        self._html_num_chars_at_end = -len(self._html_file_end)
-        if self._realtime and self._output_html_filepath:
-            self._output_html_filepath.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._output_html_filepath, 'w') as f:
-                f.write(f"{self._log_html}{self._html_file_end}")
+        self._emoji_caller = prefix_caller
+        self._emoji_time = prefix_time
+        self._target_config_md = target_config_md
+        self._target_config_ansi = target_config_ansi
         self._initialized = True
-        self.section(title=root_heading, stack_up=1)
         return
 
     def sectioner(
         self,
-        title: str = "",
-        group: bool = True,
+        title: str | None = None,
+        handler: dict[Type[Exception], Callable] | None = None,
         stack_up: int = 0,
-        catch_exception_set: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
-        catch_exception_add: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
-        catch_exception_remove: _Type[Exception] | _Sequence[_Type[Exception]] | None = None,
-        exception_log_level: LogLevel | _Literal[
-            "debug", "info", "notice", "warning", "error", "critical"
-        ] | None = None,
-        exception_handler: _Callable | None = None,
-        exception_return_value: _Any = None,
-        sys_exit: bool | None = None,
-        exit_code: int | None = None,
+        **handler_kwargs,
     ):
         """Decorator for sectioning a function or method."""
-
-        def section_decorator(func: _Callable):
-
+        def section_decorator(func: Callable):
             @_wraps(func)
             def section_wrapper(*args, **kwargs):
-
-                def func_caller_no_catch(func: _Callable, *args, **kwargs):
-                    return func(*args, **kwargs)
-
-                def fun_caller_with_catch(func: _Callable, *args, **kwargs):
-                    try:
-                        return func(*args, **kwargs)
-                    except exceptions_to_catch as e:
-                        handler_return = exception_handler(e) if exception_handler else None
-                        self.log(
-                            level=log_level_for_exception,
-                            sys_exit=sys_exit,
-                            exit_code=exit_code,
-                            stack_up=stack_up+1,
-                        )
-                        return return_value_from_exception or handler_return
-
-                if catch_exception_set is not None:
-                    exceptions_to_catch = tuple(catch_exception_set) if isinstance(
-                        catch_exception_set, _Sequence
-                    ) else (catch_exception_set,)
-                else:
-                    exceptions_to_catch = list(self._sectioner_exception_catch)
-                    if isinstance(catch_exception_add, _Sequence):
-                        exceptions_to_catch.extend(catch_exception_add)
-                    elif catch_exception_add is not None:
-                        exceptions_to_catch.append(catch_exception_add)
-                    if isinstance(catch_exception_remove, _Sequence):
-                        for exception in catch_exception_remove:
-                            try:
-                                exceptions_to_catch.remove(exception)
-                            except ValueError:
-                                pass
-                    elif catch_exception_remove is not None:
-                        try:
-                            exceptions_to_catch.remove(catch_exception_remove)
-                        except ValueError:
-                            pass
-                    exceptions_to_catch = tuple(exceptions_to_catch)
-
-                if not exceptions_to_catch:
-                    function_caller_func = func_caller_no_catch
-                else:
-                    log_level_for_exception = exception_log_level or self._sectioner_exception_log_level
-                    return_value_from_exception = (
-                        exception_return_value if exception_return_value is not None
-                        else self._sectioner_exception_return_val
-                    )
-                    function_caller_func = fun_caller_with_catch
-
                 if title:
-                    self.section(title=title, group=group, stack_up=stack_up+1)
-                result = function_caller_func(func, *args, **kwargs)
-                if title:
-                    self.section_end()
-                return result
+                    self.section(title=title, stack_up=stack_up+1)
+                try:
+                    result = func(*args, **kwargs)
+                except Exception as e:
+                    return exception_handler(self._exception_handler | handler, e, func, args, kwargs)
+                else:
+                    if title:
+                        self.section_end()
+                    return result
             return section_wrapper
+
+        def exception_handler(handlers, e, func, args, kwargs):
+            for exc_type, exc_handler in handlers.items():
+                if isinstance(e, exc_type):
+                    to_raise, return_val = exc_handler(self, e, func, args, kwargs, **handler_kwargs)
+                    if title:
+                        self.section_end()
+                    if to_raise:
+                        raise to_raise
+                    return return_val
+            if title:
+                self.section_end()
+            raise e
+
+        handler = handler or {}
         return section_decorator
 
-    def section(self, title: str, group: bool = False, stack_up: int = 0):
+    def section(
+        self,
+        title: str,
+        key: str | None = None,
+        conditions: str | list[str] | None = None,
+        stack_up: int = 0
+    ):
         if not self._initialized:
             self.initialize()
-        section_level = min(len(self._next_section_num), 6)
-        section_num = ".".join([str(num) for num in self._next_section_num])
-        self._curr_section = f"{section_num}  {title}"
-        fully_qualified_name = self._caller_name(stack_up=stack_up)
-        caller_entry_html = f"{self._symbol_caller} Caller: <code>{fully_qualified_name}</code>"
-        heading_html = _html.h(section_level, self._curr_section)
-        output_html = f"{heading_html}\n{caller_entry_html}"
-        heading_console = self._format_heading_console(
-            self._curr_section,
-            width=self._h_style[section_level].width,
-            align=self._h_style[section_level].align,
-            sgr_sequence=self._h_style[section_level].sgr_sequence,
+        heading = _mdit.element.heading(
+            content=title,
+            level=self._next_section_num,
+            explicit_number=True,
         )
-        output_console = f"{heading_console}  [{fully_qualified_name}]"
-        if self._github:
-            if group and not self._open_grouped_sections:
-                output_console = _actionman.log.group_open(title=output_console, print_=False)
-            if group or self._open_grouped_sections:
-                self._open_grouped_sections += 1
-        margin_top = "\n" * self._h_style[section_level].margin_top
-        margin_bottom = "\n" * self._h_style[section_level].margin_bottom
-        self._submit(console=f"{margin_top}{output_console}{margin_bottom}", file=output_html)
+        sig = self._get_sig(stack_up=stack_up + 1)
+        if self._realtime_levels:
+            heading_ansi = heading.source(target="ansi")
+            sig_ansi = sig.source(target="ansi")
+            self._print(f"{heading_ansi}\n{sig_ansi}")
+        if not self._doc:
+            self._doc = _mdit.document(
+                heading=heading,
+                target_config_md=self._target_config_md,
+                target_config_ansi={"ansi": self._target_config_ansi} if self._target_config_ansi else None,
+            )
+        else:
+            self._doc.open_section(heading=heading, key=key, conditions=conditions)
+        self._doc.current_section.body.append(content=sig, key="signature")
+        self._doc.current_section.body.append(
+            content=_mdit.element.ordered_list(),
+            key="logs",
+        )
         self._next_section_num.append(1)
         return
 
     def section_end(self):
-        if self._open_grouped_sections:
-            self._open_grouped_sections -= 1
-            if not self._open_grouped_sections:
-                self._submit_console(text=_actionman.log.group_close(print_=False))
-        if len(self._next_section_num) > 2:
+        self._doc.close_section()
+        if len(self._next_section_num) > 1:
             self._next_section_num.pop()
-        else:
-            # TODO: Give some warning or raise some error here
-            pass
-        self._next_section_num[-1] += 1
+            self._next_section_num[-1] += 1
         self._out_of_section = True
         return
 
     def log(
         self,
-        level: LogLevel | _Literal["debug", "info", "notice", "warning", "error", "critical"],
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        level: LogLevel | str | int,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
         sys_exit: bool | None = None,
         exit_code: int | None = None,
+        file: Stringable | None = None,
+        line: int | None = None,
+        line_end: int | None = None,
+        column: int | None = None,
+        column_end: int | None = None,
+        file_content: Stringable | None = None,
+        file_line: int | None = None,
+        file_line_end: int | None = None,
+        file_language: str | None = None,
         stack_up: int = 0,
     ):
         if not self._initialized:
             self.initialize()
-        level = level if isinstance(level, LogLevel) else LogLevel(level)
-        output_console, output_html, github_annotation_msg = self._format_entry(
+        if self._out_of_section:
+            self.section(title=self._get_caller_name(stack_up+1), stack_up=stack_up+1)
+        self._submit_log(
             level=level,
             title=title,
-            message=msg,
-            code=code,
-            code_title=code_title,
+            content=content,
+            content_md=content_md,
+            file=file,
+            line=line,
+            line_end=line_end,
+            column=column,
+            column_end=column_end,
+            file_content=file_content,
+            file_line=file_line,
+            file_line_end=file_line_end,
+            file_language=file_language,
+            stack_up=stack_up + 1
         )
-        if level is LogLevel.DEBUG and self._github:
-            output_console = _actionman.log.debug(
-                message=output_console,
-                print_=False,
-            )
-        self._submit(console=output_console, file=output_html, level=level)
-        if level is LogLevel.CRITICAL:
+        level_name = self._get_level_name(level)
+        level = self._level[level_name]
+        if level.level is LogLevel.CRITICAL:
             if sys_exit is None:
                 sys_exit = self._default_exit_code is not None
-            if sys_exit and self._open_grouped_sections:
-                self._submit_console(text=_actionman.log.group_close(print_=False))
-        fatal = level is LogLevel.CRITICAL and sys_exit
-        if self._github and level in (
-            LogLevel.NOTICE, LogLevel.WARNING, LogLevel.ERROR, LogLevel.CRITICAL
-        ):
-            caller_name = self._caller_name(stack_up=stack_up)
-            output_annotation = _actionman.log.annotation(
-                typ=level.value if level is not LogLevel.CRITICAL else "error",
-                message=github_annotation_msg,
-                title=f"{'FATAL ERROR: ' if fatal else ''}{self._curr_section} [caller: `{caller_name}`]",
-                print_=False
-            )
-            self._submit_console(text=output_annotation)
         if level is LogLevel.CRITICAL and sys_exit:
             _sys.stdout.flush()
             _sys.stderr.flush()
@@ -354,202 +254,309 @@ class Logger:
 
     def debug(
         self,
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
         stack_up: int = 0,
     ) -> None:
-        self.log(
-            level=LogLevel.DEBUG, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        return self.log(
+            level=LogLevel.DEBUG, title=title, content=content, content_md=content_md, stack_up=stack_up + 1
         )
-        return
+
+    def success(
+        self,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
+        stack_up: int = 0,
+    ) -> None:
+        return self.log(
+            level=LogLevel.SUCCESS, title=title, content=content, content_md=content_md, stack_up=stack_up + 1
+        )
 
     def info(
         self,
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
         stack_up: int = 0,
     ) -> None:
-        self.log(
-            level=LogLevel.INFO, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        return self.log(
+            level=LogLevel.INFO, title=title, content=content, content_md=content_md, stack_up=stack_up + 1
         )
-        return
 
     def notice(
         self,
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
+        file: Stringable | None = None,
+        line: int | None = None,
+        line_end: int | None = None,
+        column: int | None = None,
+        column_end: int | None = None,
+        file_content: Stringable | None = None,
+        file_line: int | None = None,
+        file_line_end: int | None = None,
+        file_language: str | None = None,
         stack_up: int = 0,
     ) -> None:
-        self.log(
-            level=LogLevel.NOTICE, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        return self.log(
+            level=LogLevel.NOTICE,
+            title=title,
+            content=content,
+            content_md=content_md,
+            file=file,
+            line=line,
+            line_end=line_end,
+            column=column,
+            column_end=column_end,
+            file_content=file_content,
+            file_line=file_line,
+            file_line_end=file_line_end,
+            file_language=file_language,
+            stack_up=stack_up + 1
         )
-        return
 
     def warning(
         self,
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
+        file: Stringable | None = None,
+        line: int | None = None,
+        line_end: int | None = None,
+        column: int | None = None,
+        column_end: int | None = None,
+        file_content: Stringable | None = None,
+        file_line: int | None = None,
+        file_line_end: int | None = None,
+        file_language: str | None = None,
         stack_up: int = 0,
     ) -> None:
-        self.log(
-            level=LogLevel.WARNING, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        return self.log(
+            level=LogLevel.WARNING,
+            title=title,
+            content=content,
+            content_md=content_md,
+            file=file,
+            line=line,
+            line_end=line_end,
+            column=column,
+            column_end=column_end,
+            file_content=file_content,
+            file_line=file_line,
+            file_line_end=file_line_end,
+            file_language=file_language,
+            stack_up=stack_up + 1
         )
-        return
 
     def error(
         self,
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
+        file: Stringable | None = None,
+        line: int | None = None,
+        line_end: int | None = None,
+        column: int | None = None,
+        column_end: int | None = None,
+        file_content: Stringable | None = None,
+        file_line: int | None = None,
+        file_line_end: int | None = None,
+        file_language: str | None = None,
         stack_up: int = 0,
     ) -> None:
-        self.log(
-            level=LogLevel.ERROR, title=title, msg=msg, code=code, code_title=code_title, stack_up=stack_up+1
+        return self.log(
+            level=LogLevel.ERROR,
+            title=title,
+            content=content,
+            content_md=content_md,
+            file=file,
+            line=line,
+            line_end=line_end,
+            column=column,
+            column_end=column_end,
+            file_content=file_content,
+            file_line=file_line,
+            file_line_end=file_line_end,
+            file_language=file_language,
+            stack_up=stack_up + 1
         )
-        return
 
     def critical(
         self,
-        title: _Stringable = "",
-        msg: _Stringable = "",
-        code: _Stringable = "",
-        code_title: _Stringable | None = None,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
         sys_exit: bool | None = None,
         exit_code: int | None = None,
+        file: Stringable | None = None,
+        line: int | None = None,
+        line_end: int | None = None,
+        column: int | None = None,
+        column_end: int | None = None,
+        file_content: Stringable | None = None,
+        file_line: int | None = None,
+        file_line_end: int | None = None,
+        file_language: str | None = None,
         stack_up: int = 0,
     ):
-        self.log(
+        return self.log(
             level=LogLevel.CRITICAL,
             title=title,
-            msg=msg,
-            code=code,
-            code_title=code_title,
+            content=content,
+            content_md=content_md,
             sys_exit=sys_exit,
             exit_code=exit_code,
-            stack_up=stack_up+1,
+            file=file,
+            line=line,
+            line_end=line_end,
+            column=column,
+            column_end=column_end,
+            file_content=file_content,
+            file_line=file_line,
+            file_line_end=file_line_end,
+            file_language=file_language,
+            stack_up=stack_up + 1
         )
-        return
 
-    @property
-    def console_log(self):
-        return self._log_console
-
-    @property
-    def html_log(self):
-        return f"{self._log_html}{self._html_file_end}"
-
-    def _format_entry(
+    def _submit_log(
         self,
-        level: LogLevel,
-        title: _Stringable,
-        message: _Stringable,
-        code: _Stringable,
-        code_title: _Stringable | None,
+        level: LogLevel | str | int,
+        title: Stringable,
+        content: Stringable = "",
+        content_md: Stringable = "",
+        file: Stringable | None = None,
+        line: int | None = None,
+        line_end: int | None = None,
+        column: int | None = None,
+        column_end: int | None = None,
+        file_content: Stringable | None = None,
+        file_line: int | None = None,
+        file_line_end: int | None = None,
+        file_language: str | None = None,
+        stack_up: int = 0,
     ):
-        style = self._level_style[level]
-        curr_exception = sys.exc_info()[1]
-        title_str = str(title) or (curr_exception.__class__.__name__ if curr_exception else "")
-        msg_str = str(message) or (str(curr_exception) if curr_exception else "")
-        code_str = str(code)
-        code_title_str = str(code_title) if code_title else style.code_title
-        traceback = _traceback.format_exc() if curr_exception else ""
-
-        output_console = f"{style.symbol} "
-        output_html = ""
-        output_annotation_msg = ""
-
-        if title:
-            output_console += _sgr.format(text=title_str, control_sequence=style.title_sgr_sequence)
-            output_html = f"{style.symbol} {style.title_html_template.format(title_str)}"
-            output_annotation_msg = title_str
-        if message:
-            if title:
-                output_console += style.title_msg_seperator_text
-                output_html += style.title_msg_seperator_html
-                output_annotation_msg += style.title_msg_seperator_github_annotation
-            else:
-                output_html += f"{style.symbol} "
-            output_console += _sgr.format(text=msg_str, control_sequence=style.msg_sgr_sequence)
-            output_html += style.msg_html_template.format(msg_str)
-            output_annotation_msg += msg_str
-        if code:
-            if title or message:
-                output_console += "\n"
-                html_summary_intro = ""
-            else:
-                output_annotation_msg += f"{code_title_str}: {code_str}"
-                html_summary_intro = f"{style.symbol} "
-            code_title_formatted = _sgr.format(
-                text=code_title_str, control_sequence=style.code_title_sgr_sequence
-            )
-            code_formatted = _sgr.format(text=code_str, control_sequence=style.code_sgr_sequence)
-            output_console += f"{code_title_formatted}{style.code_title_seperatpr_text}{code_formatted}"
-            output_html += str(
-                _html.details(
-                    summary=f"{html_summary_intro}{style.code_title_html_template.format(code_title_str)}",
-                    content=style.code_html_template.format(code_str),
+        level_name = self._get_level_name(level)
+        level = self._level[level_name]
+        sig = self._get_sig(stack_up=stack_up + 1)
+        admo_content = [sig, "–" * 50, content_md or content]
+        admo = _mdit.element.admonition(
+            type=level.style.admo_class,
+            title=title,
+            content=admo_content,
+            dropdown=True,
+            opened=not level.style.dropdown,
+        )
+        list_idx = self._doc.current_section.body["logs"].content.content.append(
+            content=admo, conditions=[level_name]
+        )
+        # Only print logs for realtime levels, except for when in GitHub Actions and debugging is enabled,
+        # in which case all non-realtime logs are printed as debug messages.
+        if level_name not in self._realtime_levels and not (self._github and self._github_debug):
+            return
+        list_num = list_idx + 1
+        if not self._github:
+            indent = " " * (len(str(list_num)) + 2)  # add 2 for ". "
+            admo_ansi = "\n".join([f"{indent}{line}" for line in admo.source(target="ansi").splitlines()]).strip()
+            self._print(f"{list_num}. {admo_ansi}\n")
+            return
+        # In GitHub
+        title = f"{list_num}. {str(title)}"
+        if level.style.gh_title_style:
+            title = _sgr.element.inline(text=title, **level.style.gh_title_style.dict)
+        if level.style.gh_title_prefix:
+            title = f"{level.style.gh_title_prefix} {title}"
+        content = str(content)
+        if level_name in self._realtime_levels:
+            annotation_type = self._get_github_annotation_type(level.level)
+            if annotation_type:
+                log_content = _actionman.log.annotation(
+                    typ=annotation_type,
+                    message=content,
+                    title=title,
+                    filename=file,
+                    line_start=line,
+                    line_end=line_end,
+                    column_start=column,
+                    column_end=column_end,
+                    print_=False,
                 )
-            )
-        if traceback:
-            if title or message or code:
-                output_console += "\n"
-                html_summary_intro = ""
             else:
-                html_summary_intro = f"{style.symbol} "
-            traceback_title_formatted = _sgr.format(
-                text=style.traceback_title, control_sequence=style.traceback_title_sgr_sequence
+                log_content = content
+            output = _actionman.log.group(
+                title=title,
+                details=f"{sig.source(target="ansi")}\n{'–'*50}\n{log_content}",
+                print_=False,
             )
-            traceback_formatted = _sgr.format(text=traceback, control_sequence=style.traceback_sgr_sequence)
-            output_console += (
-                f"{traceback_title_formatted}{style.traceback_title_seperator_text}{traceback_formatted}"
+        else:
+            output = "\n".join(
+                _actionman.log.debug(message=line, print_=False)
+                for line in ["="*50, title, sig, *content.splitlines(), "="*50]
             )
-            traceback_title_html = style.traceback_title_html_template.format(style.traceback_title)
-            output_html += str(
-                _html.details(
-                    summary=f"{html_summary_intro}{traceback_title_html}",
-                    content=style.traceback_html_template.format(traceback),
-                )
-            )
-        return output_console, str(_html.ul([output_html])), output_annotation_msg
-
-    def _submit(
-        self,
-        console: str,
-        file: str | _html.Element,
-        level: LogLevel | None = None
-    ):
-        self._submit_console(text=console, level=level)
-        self._submit_html(html=file)
+        self._print(output)
         return
 
-    def _submit_console(self, text: str, level: LogLevel | None = None):
-        self._log_console += f"{text}\n"
-        if self._realtime and (self._github or level is None or self._LOG_LEVEL_TO_INT[level] >= self._min_console_level):
-            _sys.stdout.flush()  # Flush stdout buffer before printing the exception
-            _sys.stderr.flush()  # Flush stderr buffer before printing the exception
-            print(text, flush=True)
-        return
+    def _get_sig(self, stack_up: int = 0) -> _mdit.InlineMDContainer:
+        timestamp = _datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        caller = self._get_caller_name(stack_up=stack_up + 1)
+        return _mdit.inline_container(
+            self._emoji_time,
+            " ",
+            _mdit.element.code_span(timestamp),
+            " | ",
+            self._emoji_caller,
+            " ",
+            _mdit.element.code_span(caller),
+        )
 
-    def _submit_html(self, html: str | _html.Element):
-        file_entry = f"{html}\n"
-        self._log_html += file_entry
-        if self._realtime and self._output_html_filepath:
-            with open(self._output_html_filepath, 'rb+') as file:
-                file.seek(self._html_num_chars_at_end, 2)
-                file.write(f"{file_entry}{self._html_file_end}".encode('utf-8'))
+    @staticmethod
+    def _get_level_name(level: str | int | LogLevel) -> str:
+        if isinstance(level, LogLevel):
+            return level.name.lower()
+        if isinstance(level, int):
+            return LogLevel(level).name.lower()
+        return level
+
+    @staticmethod
+    def _get_level_enum(level: str | int | LogLevel) -> LogLevel:
+        if isinstance(level, LogLevel):
+            return level
+        if isinstance(level, int):
+            return LogLevel(level)
+        return LogLevel[level.upper()]
+
+    @staticmethod
+    def _print(text: str):
+        # Flush the standard output and error streams to ensure the text is printed immediately
+        # and not buffered in between other print statements (e.g. tracebacks).
+        _sys.stdout.flush()
+        _sys.stderr.flush()
+        print(text, flush=True)
         return
 
     @staticmethod
-    def _caller_name(stack_up: int = 0) -> str:
+    def _get_open_exception():
+        exception = sys.exc_info()[1]
+        if not exception:
+            return
+        name = exception.__class__.__name__
+        traceback = _traceback.format_exc()
+        return name, exception, traceback
+
+    @staticmethod
+    def _get_github_annotation_type(level: LogLevel) -> Literal["notice", "warning", "error"] | None:
+        mapping = {
+            LogLevel.NOTICE: "notice",
+            LogLevel.WARNING: "warning",
+            LogLevel.ERROR: "error",
+            LogLevel.CRITICAL: "error",
+        }
+        return mapping[level] if level in mapping else None
+
+    @staticmethod
+    def _get_caller_name(stack_up: int = 0) -> str:
         stack = _inspect.stack()
         # The caller is the second element in the stack list
         caller_frame = stack[2 + stack_up]
@@ -560,19 +567,3 @@ class Logger:
         # Combine them to get a fully qualified name
         fully_qualified_name = f"{module_name}.{func_name}"
         return fully_qualified_name
-
-    @staticmethod
-    def _format_heading_console(
-        title: str,
-        width: int,
-        align: _Literal["left", "right", "center"],
-        sgr_sequence: str,
-    ) -> str:
-        if align == "left":
-            aligned_title = title.ljust(width)
-        elif align == "right":
-            aligned_title = title.rjust(width)
-        else:
-            aligned_title = title.center(width)
-        heading_box = _sgr.format(text=aligned_title, control_sequence=sgr_sequence)
-        return heading_box

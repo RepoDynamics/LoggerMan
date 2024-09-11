@@ -1,33 +1,37 @@
-from typing import NamedTuple as _NamedTuple, Literal as _Literal
+from __future__ import annotations
+
+from typing import NamedTuple as _NamedTuple, TYPE_CHECKING as _TYPE_CHECKING
 import ansi_sgr as _sgr
 
-
-class ConsoleHeadingStyle(_NamedTuple):
-    sgr_sequence: str
-    margin_top: int = 1
-    margin_bottom: int = 0
-    width: int = 0
-    align: _Literal["left", "right", "center"] = "left"
+if _TYPE_CHECKING:
+    from ansi_sgr.protocol import ANSIInlineStyle
 
 
-class LogStyle(_NamedTuple):
-    symbol: str
-    title_sgr_sequence: str = _sgr.style(text_styles="bold")
-    title_html_template: str = "<b>{}</b>"
-    msg_sgr_sequence: str = ""
-    msg_html_template: str = "{}"
-    code_title: str = "Code"
-    code_title_sgr_sequence: str = ""
-    code_title_html_template: str = "{}"
-    code_sgr_sequence: str = ""
-    code_html_template: str = "<pre>{}</pre>"
-    title_msg_seperator_text: str = ": "
-    title_msg_seperator_html: str = ": "
-    title_msg_seperator_github_annotation: str = ": "
-    code_title_seperatpr_text: str = ": "
-    traceback_title: str = "Traceback"
-    traceback_title_sgr_sequence: str = ""
-    traceback_title_html_template: str = "{}"
-    traceback_sgr_sequence: str = ""
-    traceback_html_template: str = "<pre>{}</pre>"
-    traceback_title_seperator_text: str = ": "
+class LogLevelStyle(_NamedTuple):
+    admo_class: str
+    gh_title_style: ANSIInlineStyle | None
+    gh_title_prefix: str
+    dropdown: bool
+    show_caller: bool
+    show_time: bool
+
+
+def log_level(
+    admo_class: str,
+    gh_title_style: ANSIInlineStyle | dict | None = _sgr.protocol.ANSIInlineStyle(text_styles="bold"),
+    gh_title_prefix: str = "",
+    dropdown: bool = True,
+    show_caller: bool = True,
+    show_time: bool = True,
+) -> LogLevelStyle:
+    gh_title_style = gh_title_style if isinstance(
+        gh_title_style, _sgr.protocol.ANSIInlineStyle
+    ) else (_sgr.protocol.ANSIInlineStyle(**gh_title_style) if gh_title_style else None)
+    return LogLevelStyle(
+        admo_class=admo_class,
+        gh_title_style=gh_title_style,
+        gh_title_prefix=gh_title_prefix,
+        dropdown=dropdown,
+        show_caller=show_caller,
+        show_time=show_time,
+)
