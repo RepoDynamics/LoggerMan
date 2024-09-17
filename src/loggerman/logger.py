@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from enum import Enum as _Enum
 import datetime as _datetime
 from typing import NamedTuple as _NamedTuple, Sequence as _Sequence, TYPE_CHECKING as _TYPE_CHECKING
@@ -9,16 +8,26 @@ import sys as _sys
 import traceback as _traceback
 from functools import wraps as _wraps
 
-import ansi_sgr as _sgr
 import actionman as _actionman
 import mdit as _mdit
+import rich
+import rich.traceback
+import rich._inspect
+import rich.pretty
+import rich.panel
+import rich.box
+import rich.markdown
+import rich.text
 
 from loggerman import style as _style
 
 
 if _TYPE_CHECKING:
-    from typing import Literal, Sequence, Callable, Type
+    from types import ModuleType, TracebackType
+    from typing import Literal, Sequence, Callable, Type, Iterable
     from pyprotocol import Stringable
+    from mdit.protocol import MDTargetConfig, RichTargetConfig, ContainerContentInputType
+    from mdit import MDContainer
     from loggerman.style import LogLevelStyle
 
 
@@ -48,11 +57,16 @@ class Logger:
         self._default_exit_code: int | None = None
         self._exception_handler: dict[Type[Exception], Callable] | None = None
         self._level: dict[str, _LogLevelData] = {}
-        self._emoji_caller: str = ""
-        self._emoji_time: str = ""
-        self._out_of_section: bool = False
-        self._target_config_md: dict[str, _mdit.TargetConfig | dict] | None = None
-        self._target_config_ansi: _mdit.ANSITargetConfig | dict | None = None
+        self._out_of_section: bool = True
+        self._target_configs_md: dict[str, _mdit.MDTargetConfig | dict] | None = None
+        self._target_configs_rich: dict[str, _mdit.RichTargetConfig | dict] | None = None
+        self._target_default_md: str = ""
+        self._target_default_rich: str = ""
+        self._console: rich.console.Console | None = None
+        self._list_entries: bool = True
+        self._curr_list_key: str | None = None
+        self._prefix_caller_name: str = ""
+        self._prefix_time: str = ""
         return
 
     @property
@@ -62,22 +76,71 @@ class Logger:
     def initialize(
         self,
         realtime_levels: Sequence[str | int | LogLevel] | None = None,
-        github: bool = False,
+        console_config: _mdit.target.rich.ConsoleConfig | dict = _mdit.target.rich.ConsoleConfig(),
+        github: bool | None = None,
         github_debug: bool = True,
         title_number: int | _Sequence[int] = 1,
         exception_handler: dict[Type[Exception], Callable] | None = None,
         exit_code_critical: int | None = None,
-        target_config_md: dict[str, _mdit.TargetConfig | dict] | None = None,
-        target_config_ansi: _mdit.ANSITargetConfig | dict | None = None,
-        level_style_debug: LogLevelStyle = _style.log_level(admo_class="hint", gh_title_prefix="🔘"),
-        level_style_success: LogLevelStyle = _style.log_level(admo_class="seealso", gh_title_prefix="✅"),
-        level_style_info: LogLevelStyle = _style.log_level(admo_class="note", gh_title_prefix="ℹ️"),
-        level_style_notice: LogLevelStyle = _style.log_level(admo_class="attention", gh_title_prefix="❗"),
-        level_style_warning: LogLevelStyle = _style.log_level(admo_class="warning", gh_title_prefix="🚨"),
-        level_style_error: LogLevelStyle = _style.log_level(admo_class="danger", dropdown=False, gh_title_prefix="🚫"),
-        level_style_critical: LogLevelStyle = _style.log_level(admo_class="error", dropdown=False, gh_title_prefix="⛔"),
-        prefix_caller: str = "🔔",
-        prefix_time: str = "⏰",
+        target_configs_md: dict[str, _mdit.MDTargetConfig | dict] | None = None,
+        target_configs_rich: dict[str, _mdit.RichTargetConfig | dict] | None = None,
+        target_default_md: str = "sphinx",
+        target_default_rich: str = "console",
+        list_entries: bool = True,
+        current_list_key: str | None = None,
+        level_style_debug: LogLevelStyle = _style.log_level(
+            color="muted",
+            icon="🔘",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#6c757d", bold=True),
+            ),
+
+        ),
+        level_style_success: LogLevelStyle = _style.log_level(
+            color="success",
+            icon="✅",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#28a745", bold=True),
+            ),
+        ),
+        level_style_info: LogLevelStyle = _style.log_level(
+            color="info",
+            icon="ℹ️",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#17a2b8", bold=True),
+            ),
+        ),
+        level_style_notice: LogLevelStyle = _style.log_level(
+            color="warning",
+            icon="❗",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#f0b37e", bold=True),
+            ),
+        ),
+        level_style_warning: LogLevelStyle = _style.log_level(
+            color="warning",
+            icon="🚨",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#f0b37e", bold=True),
+            ),
+        ),
+        level_style_error: LogLevelStyle = _style.log_level(
+            color="danger",
+            icon="🚫",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#dc3545", bold=True),
+            ),
+        ),
+        level_style_critical: LogLevelStyle = _style.log_level(
+            color="danger",
+            opened=True,
+            icon="⛔",
+            rich_config=_mdit.target.rich.PanelConfig(
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#dc3545", bold=True),
+            ),
+        ),
+        prefix_caller_name: str = "🔔 ",
+        prefix_time: str = "⏰ ",
     ):
         def process_exit_code():
             error_msg_exit_code = (
@@ -97,10 +160,9 @@ class Logger:
         if realtime_levels:
             for level in realtime_levels:
                 self._realtime_levels.append(self._get_level_name(level))
-        self._github = github
         self._github_debug = github_debug
-        self._next_section_num = list(title_number) if isinstance(title_number, Sequence) else [1] * title_number
-        self._exception_handler = exception_handler
+        self._next_section_num = list(title_number) if isinstance(title_number, _Sequence) else [1] * title_number
+        self._exception_handler = exception_handler or {}
         process_exit_code()
         self._level = {
             "debug": _LogLevelData(level=LogLevel.DEBUG, style=level_style_debug),
@@ -111,18 +173,144 @@ class Logger:
             "error": _LogLevelData(level=LogLevel.ERROR, style=level_style_error),
             "critical": _LogLevelData(level=LogLevel.CRITICAL, style=level_style_critical),
         }
-        self._emoji_caller = prefix_caller
-        self._emoji_time = prefix_time
-        self._target_config_md = target_config_md
-        self._target_config_ansi = target_config_ansi
+        self._target_configs_md = target_configs_md
+        self._target_configs_rich = target_configs_rich
+        self._target_default_md = target_default_md
+        self._target_default_rich = target_default_rich
+        if isinstance(console_config, dict):
+            console_config = _mdit.target.rich.ConsoleConfig(**console_config)
+        in_github = github if github is not None else _actionman.in_gha()
+        self._github = in_github
+        self._console = console_config.make(
+            force_terminal=True if in_github else console_config.force_terminal
+        )
+        self._list_entries = list_entries
+        self._curr_list_key = current_list_key
+        self._prefix_caller_name = prefix_caller_name
+        self._prefix_time = prefix_time
         self._initialized = True
-        return
+        return self
+
+    @staticmethod
+    def traceback(
+        trace: tuple[Type[BaseException], BaseException, TracebackType] | None = None,
+        width: int = 70,
+        extra_lines: int = 3,
+        theme: str | None = None,
+        word_wrap: bool = False,
+        show_locals: bool = False,
+        indent_guides: bool = True,
+        locals_max_length: int = 10,
+        locals_max_string: int = 80,
+        locals_hide_dunder: bool = True,
+        locals_hide_sunder: bool = False,
+        suppress: Iterable[str | ModuleType] = (),
+        max_frames: int = 100,
+    ):
+        if trace is None:
+            exc_type, exc_value, traceback = _sys.exc_info()
+            if exc_type is None or exc_value is None or traceback is None:
+                return
+        else:
+            exc_type, exc_value, traceback = trace
+        rich_traceback = rich.traceback.Traceback(
+            rich.traceback.Traceback.extract(exc_type, exc_value, traceback, show_locals=show_locals),
+            width=width,
+            extra_lines=extra_lines,
+            theme=theme,
+            word_wrap=word_wrap,
+            show_locals=show_locals,
+            indent_guides=indent_guides,
+            locals_max_length=locals_max_length,
+            locals_max_string=locals_max_string,
+            locals_hide_dunder=locals_hide_dunder,
+            locals_hide_sunder=locals_hide_sunder,
+            suppress=suppress,
+            max_frames=max_frames,
+        )
+        return _mdit.element.rich(rich_traceback)
+
+    @staticmethod
+    def inspect(
+        obj: object,
+        title: str | None = None,
+        show_value: bool = True,
+        show_sunder: bool = False,
+        show_dunder: bool = False,
+        show_methods: bool = False,
+        show_help: bool = False,
+        show_docs: bool = False,
+        sort: bool = True,
+    ):
+        rich_inspect = rich._inspect.Inspect(
+            obj,
+            title=title,
+            methods=show_methods,
+            help=show_help,
+            docs=show_docs,
+            private=show_sunder,
+            dunder=show_dunder,
+            sort=sort,
+            value=show_value,
+        )
+        return _mdit.element.rich(rich_inspect)
+
+    @staticmethod
+    def pretty(
+        obj: object,
+        title: str | None = None,
+        footer: str | None = None,
+        highlighter: rich.console.HighlighterType | None = None,
+        indent_size: int = 4,
+        justify: rich.console.JustifyMethod | None = None,
+        overflow: rich.console.OverflowMethod | None = None,
+        no_wrap: bool = False,
+        indent_guides: bool = True,
+        max_length: int | None = None,
+        max_string: int | None = None,
+        max_depth: int | None = None,
+        expand_all: bool = False,
+        margin: int = 0,
+        insert_line: bool = False,
+        box: rich.box.Box = rich.box.ROUNDED,
+        expand: bool = True,
+        title_align: Literal["left", "center", "right"] = "left",
+        footer_align: Literal["left", "center", "right"] = "right",
+        safe_box: bool = True,
+    ):
+        rich_pretty = rich.pretty.Pretty(
+            obj,
+            highlighter=highlighter,
+            indent_size=indent_size,
+            justify=justify,
+            overflow=overflow,
+            no_wrap=no_wrap,
+            indent_guides=indent_guides,
+            max_length=max_length,
+            max_string=max_string,
+            max_depth=max_depth,
+            expand_all=expand_all,
+            margin=margin,
+            insert_line=insert_line,
+        )
+        panel = rich.panel.Panel(
+            rich_pretty,
+            title=title,
+            subtitle=footer,
+            box=box,
+            expand=expand,
+            title_align=title_align,
+            subtitle_align=footer_align,
+            safe_box=safe_box,
+        )
+        return _mdit.element.rich(panel)
 
     def sectioner(
         self,
         title: str | None = None,
+        key: str | None = None,
+        conditions: str | list[str] | None = None,
         handler: dict[Type[Exception], Callable] | None = None,
-        stack_up: int = 0,
         **handler_kwargs,
     ):
         """Decorator for sectioning a function or method."""
@@ -130,7 +318,7 @@ class Logger:
             @_wraps(func)
             def section_wrapper(*args, **kwargs):
                 if title:
-                    self.section(title=title, stack_up=stack_up+1)
+                    self.section(title=title, key=key, conditions=conditions)
                 try:
                     result = func(*args, **kwargs)
                 except Exception as e:
@@ -162,33 +350,28 @@ class Logger:
         title: str,
         key: str | None = None,
         conditions: str | list[str] | None = None,
-        stack_up: int = 0
     ):
         if not self._initialized:
             self.initialize()
         heading = _mdit.element.heading(
-            content=title,
+            title,
             level=self._next_section_num,
             explicit_number=True,
         )
-        sig = self._get_sig(stack_up=stack_up + 1)
         if self._realtime_levels:
-            heading_ansi = heading.source(target="ansi")
-            sig_ansi = sig.source(target="ansi")
-            self._print(f"{heading_ansi}\n{sig_ansi}")
+            self._print(heading.source(target="console"))
         if not self._doc:
             self._doc = _mdit.document(
                 heading=heading,
-                target_config_md=self._target_config_md,
-                target_config_ansi={"ansi": self._target_config_ansi} if self._target_config_ansi else None,
+                target_configs_md=self._target_configs_md,
+                target_configs_rich=self._target_configs_rich,
             )
+            for level_name, log_level in self._level.items():
+                self._doc.target_configs["console"].dropdown_class[level_name] = log_level.style.rich_config
         else:
             self._doc.open_section(heading=heading, key=key, conditions=conditions)
-        self._doc.current_section.body.append(content=sig, key="signature")
-        self._doc.current_section.body.append(
-            content=_mdit.element.ordered_list(),
-            key="logs",
-        )
+        self._curr_list_key = None
+        self._out_of_section = False
         self._next_section_num.append(1)
         return
 
@@ -198,14 +381,14 @@ class Logger:
             self._next_section_num.pop()
             self._next_section_num[-1] += 1
         self._out_of_section = True
+        self._curr_list_key = None
         return
 
     def log(
         self,
         level: LogLevel | str | int,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content: ContainerContentInputType | MDContainer,
         sys_exit: bool | None = None,
         exit_code: int | None = None,
         file: Stringable | None = None,
@@ -213,30 +396,25 @@ class Logger:
         line_end: int | None = None,
         column: int | None = None,
         column_end: int | None = None,
-        file_content: Stringable | None = None,
-        file_line: int | None = None,
-        file_line_end: int | None = None,
-        file_language: str | None = None,
         stack_up: int = 0,
     ):
-        if not self._initialized:
-            self.initialize()
         if self._out_of_section:
-            self.section(title=self._get_caller_name(stack_up+1), stack_up=stack_up+1)
+            self.section(title=self._get_caller_name(stack_up+1))
+        if self._list_entries and self._curr_list_key is None:
+            self._curr_list_key = self._doc.current_section.body.append(
+                content=_mdit.element.ordered_list(
+                    target_configs=self._doc.target_configs
+                ),
+            )
         self._submit_log(
             level=level,
             title=title,
             content=content,
-            content_md=content_md,
             file=file,
             line=line,
             line_end=line_end,
             column=column,
             column_end=column_end,
-            file_content=file_content,
-            file_line=file_line,
-            file_line_end=file_line_end,
-            file_language=file_language,
             stack_up=stack_up + 1
         )
         level_name = self._get_level_name(level)
@@ -255,140 +433,100 @@ class Logger:
     def debug(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         stack_up: int = 0,
     ) -> None:
-        return self.log(
-            level=LogLevel.DEBUG, title=title, content=content, content_md=content_md, stack_up=stack_up + 1
-        )
+        return self.log(LogLevel.DEBUG, title, *content, stack_up=stack_up + 1)
 
     def success(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         stack_up: int = 0,
     ) -> None:
-        return self.log(
-            level=LogLevel.SUCCESS, title=title, content=content, content_md=content_md, stack_up=stack_up + 1
-        )
+        return self.log(LogLevel.SUCCESS, title, *content, stack_up=stack_up + 1)
 
     def info(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         stack_up: int = 0,
     ) -> None:
-        return self.log(
-            level=LogLevel.INFO, title=title, content=content, content_md=content_md, stack_up=stack_up + 1
-        )
+        return self.log(LogLevel.INFO, title, *content, stack_up=stack_up + 1)
 
     def notice(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         file: Stringable | None = None,
         line: int | None = None,
         line_end: int | None = None,
         column: int | None = None,
         column_end: int | None = None,
-        file_content: Stringable | None = None,
-        file_line: int | None = None,
-        file_line_end: int | None = None,
-        file_language: str | None = None,
         stack_up: int = 0,
     ) -> None:
         return self.log(
-            level=LogLevel.NOTICE,
-            title=title,
-            content=content,
-            content_md=content_md,
+            LogLevel.NOTICE,
+            title,
+            *content,
             file=file,
             line=line,
             line_end=line_end,
             column=column,
             column_end=column_end,
-            file_content=file_content,
-            file_line=file_line,
-            file_line_end=file_line_end,
-            file_language=file_language,
             stack_up=stack_up + 1
         )
 
     def warning(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         file: Stringable | None = None,
         line: int | None = None,
         line_end: int | None = None,
         column: int | None = None,
         column_end: int | None = None,
-        file_content: Stringable | None = None,
-        file_line: int | None = None,
-        file_line_end: int | None = None,
-        file_language: str | None = None,
         stack_up: int = 0,
     ) -> None:
         return self.log(
-            level=LogLevel.WARNING,
-            title=title,
-            content=content,
-            content_md=content_md,
+            LogLevel.WARNING,
+            title,
+            *content,
             file=file,
             line=line,
             line_end=line_end,
             column=column,
             column_end=column_end,
-            file_content=file_content,
-            file_line=file_line,
-            file_line_end=file_line_end,
-            file_language=file_language,
             stack_up=stack_up + 1
         )
 
     def error(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         file: Stringable | None = None,
         line: int | None = None,
         line_end: int | None = None,
         column: int | None = None,
         column_end: int | None = None,
-        file_content: Stringable | None = None,
-        file_line: int | None = None,
-        file_line_end: int | None = None,
-        file_language: str | None = None,
         stack_up: int = 0,
     ) -> None:
         return self.log(
-            level=LogLevel.ERROR,
-            title=title,
-            content=content,
-            content_md=content_md,
+            LogLevel.ERROR,
+            title,
+            *content,
             file=file,
             line=line,
             line_end=line_end,
             column=column,
             column_end=column_end,
-            file_content=file_content,
-            file_line=file_line,
-            file_line_end=file_line_end,
-            file_language=file_language,
             stack_up=stack_up + 1
         )
 
     def critical(
         self,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        *content,
         sys_exit: bool | None = None,
         exit_code: int | None = None,
         file: Stringable | None = None,
@@ -396,17 +534,12 @@ class Logger:
         line_end: int | None = None,
         column: int | None = None,
         column_end: int | None = None,
-        file_content: Stringable | None = None,
-        file_line: int | None = None,
-        file_line_end: int | None = None,
-        file_language: str | None = None,
         stack_up: int = 0,
     ):
         return self.log(
-            level=LogLevel.CRITICAL,
-            title=title,
-            content=content,
-            content_md=content_md,
+            LogLevel.CRITICAL,
+            title,
+            *content,
             sys_exit=sys_exit,
             exit_code=exit_code,
             file=file,
@@ -414,10 +547,6 @@ class Logger:
             line_end=line_end,
             column=column,
             column_end=column_end,
-            file_content=file_content,
-            file_line=file_line,
-            file_line_end=file_line_end,
-            file_language=file_language,
             stack_up=stack_up + 1
         )
 
@@ -425,91 +554,93 @@ class Logger:
         self,
         level: LogLevel | str | int,
         title: Stringable,
-        content: Stringable = "",
-        content_md: Stringable = "",
+        content: tuple,
         file: Stringable | None = None,
         line: int | None = None,
         line_end: int | None = None,
         column: int | None = None,
         column_end: int | None = None,
-        file_content: Stringable | None = None,
-        file_line: int | None = None,
-        file_line_end: int | None = None,
-        file_language: str | None = None,
         stack_up: int = 0,
     ):
         level_name = self._get_level_name(level)
         level = self._level[level_name]
-        sig = self._get_sig(stack_up=stack_up + 1)
-        admo_content = [sig, "–" * 50, content_md or content]
-        admo = _mdit.element.admonition(
-            type=level.style.admo_class,
+        sig = self._get_sig(level=level.style, stack_up=stack_up + 1)
+        dropdown = _mdit.element.dropdown(
             title=title,
-            content=admo_content,
-            dropdown=True,
-            opened=not level.style.dropdown,
+            body=list(content),
+            footer=sig,
+            opened=level.style.opened,
+            color=level.style.color,
+            icon=level.style.icon,
+            octicon=level.style.octicon,
+            chevron=level.style.chevron,
+            animate=level.style.animate,
+            margin=level.style.margin,
+            classes_container=level.style.classes_container,
+            classes_title=level.style.classes_title,
+            classes_body=level.style.classes_body,
+            config_rich=level.style.rich_config,
+            target_configs=self._doc.target_configs,
+            target_default=self._target_default_md,
         )
-        list_idx = self._doc.current_section.body["logs"].content.content.append(
-            content=admo, conditions=[level_name]
-        )
+        if self._curr_list_key is not None:
+            output_console = self._doc.current_section.body[self._curr_list_key].content.append(
+                content=dropdown, conditions=[level_name]
+            )
+            list_number = output_console.number
+        else:
+            output_console = dropdown
+            list_number = None
+            self._doc.current_section.body.append(dropdown, conditions=[level_name])
         # Only print logs for realtime levels, except for when in GitHub Actions and debugging is enabled,
         # in which case all non-realtime logs are printed as debug messages.
         if level_name not in self._realtime_levels and not (self._github and self._github_debug):
             return
-        list_num = list_idx + 1
         if not self._github:
-            indent = " " * (len(str(list_num)) + 2)  # add 2 for ". "
-            admo_ansi = "\n".join([f"{indent}{line}" for line in admo.source(target="ansi").splitlines()]).strip()
-            self._print(f"{list_num}. {admo_ansi}\n")
+            self._print(output_console.source(target="console", filters=["console"]))
             return
         # In GitHub
-        title = f"{list_num}. {str(title)}"
-        if level.style.gh_title_style:
-            title = _sgr.element.inline(text=title, **level.style.gh_title_style.dict)
-        if level.style.gh_title_prefix:
-            title = f"{level.style.gh_title_prefix} {title}"
-        content = str(content)
-        if level_name in self._realtime_levels:
-            annotation_type = self._get_github_annotation_type(level.level)
-            if annotation_type:
-                log_content = _actionman.log.annotation(
-                    typ=annotation_type,
-                    message=content,
-                    title=title,
-                    filename=file,
-                    line_start=line,
-                    line_end=line_end,
-                    column_start=column,
-                    column_end=column_end,
-                    print_=False,
-                )
-            else:
-                log_content = content
-            output = _actionman.log.group(
+        if level_name not in self._realtime_levels:
+            # GHA Debug
+            _actionman.log.debug(output_console)
+            return
+        dropdown_rich = dropdown.source(target="console", filters=["console"])
+        group_title = dropdown_rich.title
+        dropdown_rich.title = None
+        if list_number:
+            sec_num = rich.text.Text(f"{list_number:>3}. ")
+            sec_num.append(group_title)
+            group_title = sec_num
+        annotation_type = self._get_github_annotation_type(level.level)
+        if annotation_type:
+            _actionman.log.annotation(
+                typ=annotation_type,
+                message="See the logs for details.",
                 title=title,
-                details=f"{sig.source(target="ansi")}\n{'–'*50}\n{log_content}",
-                print_=False,
+                filename=file,
+                line_start=line,
+                line_end=line_end,
+                column_start=column,
+                column_end=column_end,
             )
-        else:
-            output = "\n".join(
-                _actionman.log.debug(message=line, print_=False)
-                for line in ["="*50, title, sig, *content.splitlines(), "="*50]
-            )
-        self._print(output)
+        _actionman.log.group(
+            dropdown_rich,
+            title=group_title,
+        )
         return
 
-    def _get_sig(self, stack_up: int = 0) -> _mdit.InlineMDContainer:
-        timestamp = _datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        caller = self._get_caller_name(stack_up=stack_up + 1)
-        return _mdit.inline_container(
-            self._emoji_time,
-            " ",
-            _mdit.element.code_span(timestamp),
-            " | ",
-            self._emoji_caller,
-            " ",
-            _mdit.element.code_span(caller),
-        )
+    def _get_sig(self, level: LogLevelStyle, stack_up: int = 0) -> _mdit.MDContainer | None:
+        if not level.signature:
+            return
+        signature = []
+        for sig in level.signature:
+            if sig == "caller_name":
+                caller = self._get_caller_name(stack_up=stack_up + 1)
+                signature.append(_mdit.inline_container(self._prefix_caller_name, _mdit.element.code_span(caller)))
+            if sig == "time":
+                timestamp = _datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                signature.append(_mdit.inline_container(self._prefix_time, _mdit.element.code_span(timestamp)))
+        return _mdit.inline_container(*signature, separator=" ")
 
     @staticmethod
     def _get_level_name(level: str | int | LogLevel) -> str:
@@ -527,18 +658,17 @@ class Logger:
             return LogLevel(level)
         return LogLevel[level.upper()]
 
-    @staticmethod
-    def _print(text: str):
+    def _print(self, renderable):
         # Flush the standard output and error streams to ensure the text is printed immediately
         # and not buffered in between other print statements (e.g. tracebacks).
         _sys.stdout.flush()
         _sys.stderr.flush()
-        print(text, flush=True)
+        self._console.print(renderable)
         return
 
     @staticmethod
     def _get_open_exception():
-        exception = sys.exc_info()[1]
+        exception = _sys.exc_info()[1]
         if not exception:
             return
         name = exception.__class__.__name__

@@ -1,37 +1,48 @@
 from __future__ import annotations
 
-from typing import NamedTuple as _NamedTuple, TYPE_CHECKING as _TYPE_CHECKING
-import ansi_sgr as _sgr
+from typing import TYPE_CHECKING as _TYPE_CHECKING, Literal as _Literal
 
-if _TYPE_CHECKING:
-    from ansi_sgr.protocol import ANSIInlineStyle
+import pydantic as _pydantic
+
+from mdit.target.rich import PanelConfig as _PanelConfig
 
 
-class LogLevelStyle(_NamedTuple):
-    admo_class: str
-    gh_title_style: ANSIInlineStyle | None
-    gh_title_prefix: str
-    dropdown: bool
-    show_caller: bool
-    show_time: bool
+class LogLevelStyle(_pydantic.BaseModel):
+    rich_config: _PanelConfig
+    opened: bool
+    color: _Literal["primary", "secondary", "success", "danger", "warning", "info", "light", "dark", "muted"]
+    icon: str
+    octicon: str | None = None
+    chevron: _Literal["right-down", "down-up"] | None = None,
+    animate: _Literal["fade-in", "fade-in-slide-down"] | None = None,
+    margin: _Literal["auto", 0, 1, 2, 3, 4, 5] | tuple[_Literal["auto", 0, 1, 2, 3, 4, 5], ...] | None = None,
+    classes_container: list[str] = []
+    classes_title: list[str] = []
+    classes_body: list[str] = []
+    signature: list[_Literal["caller_name", "time"]] = []
+
 
 
 def log_level(
-    admo_class: str,
-    gh_title_style: ANSIInlineStyle | dict | None = _sgr.protocol.ANSIInlineStyle(text_styles="bold"),
-    gh_title_prefix: str = "",
-    dropdown: bool = True,
-    show_caller: bool = True,
-    show_time: bool = True,
+    rich_config: _PanelConfig,
+    opened: bool = False,
+    color: _Literal["primary", "secondary", "success", "danger", "warning", "info", "light", "dark", "muted"] = "primary",
+    icon: str = "",
+    octicon: str | None = None,
+    classes_container: list[str] | None = None,
+    classes_title: list[str] | None = None,
+    classes_body: list[str] | None = None,
+    signature: tuple[_Literal["caller_name", "time"]] | None = ("time", "caller_name"),
+
 ) -> LogLevelStyle:
-    gh_title_style = gh_title_style if isinstance(
-        gh_title_style, _sgr.protocol.ANSIInlineStyle
-    ) else (_sgr.protocol.ANSIInlineStyle(**gh_title_style) if gh_title_style else None)
     return LogLevelStyle(
-        admo_class=admo_class,
-        gh_title_style=gh_title_style,
-        gh_title_prefix=gh_title_prefix,
-        dropdown=dropdown,
-        show_caller=show_caller,
-        show_time=show_time,
-)
+        rich_config=rich_config,
+        opened=opened,
+        color=color,
+        icon=icon,
+        octicon=octicon,
+        classes_container=classes_container or [],
+        classes_title=classes_title or [],
+        classes_body=classes_body or [],
+        signature=signature or [],
+    )
