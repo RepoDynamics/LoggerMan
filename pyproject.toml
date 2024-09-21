@@ -17,12 +17,11 @@ namespaces = true
 # ----------------------------------------- Project Metadata -------------------------------------
 #
 [project]
-version = "0.0.0.dev14"
+version = "0.0.0.dev15"
 name = "LoggerMan"
 dependencies = [
-    "mdit",
-    "actionman",
-    "ansi-sgr",
-    "PyProtocol",
+    "MDit == 0.0.0.dev3",
+    "ActionMan == 0.0.0.dev15",
+    "ProtocolMan == 0.0.0.dev2",
 ]
 requires-python = ">=3.10"

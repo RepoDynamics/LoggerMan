@@ -25,7 +25,7 @@ from loggerman import style as _style
 if _TYPE_CHECKING:
     from types import ModuleType, TracebackType
     from typing import Literal, Sequence, Callable, Type, Iterable
-    from pyprotocol import Stringable
+    from protocolman import Stringable
     from mdit.protocol import MDTargetConfig, RichTargetConfig, ContainerContentInputType
     from mdit import MDContainer
     from loggerman.style import LogLevelStyle
