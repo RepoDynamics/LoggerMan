@@ -67,6 +67,7 @@ class Logger:
         self._curr_list_key: str | None = None
         self._prefix_caller_name: str = ""
         self._prefix_time: str = ""
+        self._actionman_logger: _actionman.log.Logger | None = None
         return
 
     @property
@@ -76,7 +77,7 @@ class Logger:
     def initialize(
         self,
         realtime_levels: Sequence[str | int | LogLevel] | None = None,
-        console_config: _mdit.target.rich.ConsoleConfig | dict = _mdit.target.rich.ConsoleConfig(),
+        console_config: _mdit.target.rich.ConsoleConfig | dict | None = None,
         github: bool | None = None,
         github_debug: bool = True,
         title_number: int | _Sequence[int] = 1,
@@ -177,13 +178,20 @@ class Logger:
         self._target_configs_rich = target_configs_rich
         self._target_default_md = target_default_md
         self._target_default_rich = target_default_rich
-        if isinstance(console_config, dict):
-            console_config = _mdit.target.rich.ConsoleConfig(**console_config)
         in_github = github if github is not None else _actionman.in_gha()
         self._github = in_github
+        if console_config is None:
+            console_config = _mdit.target.rich.ConsoleConfig(
+                color_system="truecolor" if in_github else "auto",
+                force_terminal=True if in_github else None,
+                width=91 if in_github else None,
+            )
+        elif isinstance(console_config, dict):
+            console_config = _mdit.target.rich.ConsoleConfig(**console_config)
         self._console = console_config.make(
             force_terminal=True if in_github else console_config.force_terminal
         )
+        self._actionman_logger = _actionman.log.Logger(console=self._console)
         self._list_entries = list_entries
         self._curr_list_key = current_list_key
         self._prefix_caller_name = prefix_caller_name
@@ -602,7 +610,7 @@ class Logger:
         # In GitHub
         if level_name not in self._realtime_levels:
             # GHA Debug
-            _actionman.log.debug(output_console)
+            self._actionman_logger.debug(output_console)
             return
         dropdown_rich = dropdown.source(target="console", filters=["console"])
         group_title = dropdown_rich.title
@@ -613,7 +621,7 @@ class Logger:
             group_title = sec_num
         annotation_type = self._get_github_annotation_type(level.level)
         if annotation_type:
-            _actionman.log.annotation(
+            self._actionman_logger.annotation(
                 typ=annotation_type,
                 message="See the logs for details.",
                 title=title,
@@ -623,7 +631,7 @@ class Logger:
                 column_start=column,
                 column_end=column_end,
             )
-        _actionman.log.group(
+        self._actionman_logger.group(
             dropdown_rich,
             title=group_title,
         )
