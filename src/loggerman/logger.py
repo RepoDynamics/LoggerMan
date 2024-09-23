@@ -610,7 +610,7 @@ class Logger:
         # In GitHub
         if level_name not in self._realtime_levels:
             # GHA Debug
-            self._actionman_logger.debug(output_console)
+            self._actionman_logger.debug(output_console.source(target="console", filters=["console"]))
             return
         dropdown_rich = dropdown.source(target="console", filters=["console"])
         group_title = dropdown_rich.title
