@@ -185,7 +185,7 @@ class Logger:
             console_config = _mdit.target.rich.ConsoleConfig(
                 color_system="truecolor" if in_github else "auto",
                 force_terminal=True if in_github else None,
-                width=90 if in_github else None,
+                width=89 if in_github else None,
             )
         elif isinstance(console_config, dict):
             console_config = _mdit.target.rich.ConsoleConfig(**console_config)
