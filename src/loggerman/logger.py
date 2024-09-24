@@ -10,6 +10,7 @@ from functools import wraps as _wraps
 
 import actionman as _actionman
 import mdit as _mdit
+from exceptionman import Traceback as _Traceback
 import rich
 import rich.traceback
 import rich._inspect
@@ -202,7 +203,7 @@ class Logger:
     @staticmethod
     def traceback(
         trace: tuple[Type[BaseException], BaseException, TracebackType] | None = None,
-        width: int = 70,
+        code_width: int = 88,
         extra_lines: int = 3,
         theme: str | None = None,
         word_wrap: bool = False,
@@ -221,9 +222,9 @@ class Logger:
                 return
         else:
             exc_type, exc_value, traceback = trace
-        rich_traceback = rich.traceback.Traceback(
-            rich.traceback.Traceback.extract(exc_type, exc_value, traceback, show_locals=show_locals),
-            width=width,
+        rich_traceback = _Traceback(
+            _Traceback.extract(exc_type, exc_value, traceback, show_locals=show_locals),
+            code_width=code_width,
             extra_lines=extra_lines,
             theme=theme,
             word_wrap=word_wrap,
