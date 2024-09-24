@@ -25,7 +25,7 @@ from loggerman import style as _style
 
 if _TYPE_CHECKING:
     from types import ModuleType, TracebackType
-    from typing import Literal, Sequence, Callable, Type, Iterable
+    from typing import Literal, Sequence, Callable, Type, Iterable, Any
     from protocolman import Stringable
     from mdit.protocol import MDTargetConfig, RichTargetConfig, ContainerContentInputType
     from mdit import MDContainer
@@ -56,7 +56,7 @@ class Logger:
         self._github_debug: bool = True
         self._next_section_num: list[int] = []
         self._default_exit_code: int | None = None
-        self._exception_handler: dict[Type[Exception], Callable] | None = None
+        self._exception_handler: dict[Type[Exception], Callable | tuple[Callable, dict[str, Any]]] | None = None
         self._level: dict[str, _LogLevelData] = {}
         self._out_of_section: bool = True
         self._target_configs_md: dict[str, _mdit.MDTargetConfig | dict] | None = None
@@ -69,6 +69,7 @@ class Logger:
         self._prefix_caller_name: str = ""
         self._prefix_time: str = ""
         self._actionman_logger: _actionman.log.Logger | None = None
+        self._curr_section_name: str | None = None
         return
 
     @property
@@ -82,7 +83,7 @@ class Logger:
         github: bool | None = None,
         github_debug: bool = True,
         title_number: int | _Sequence[int] = 1,
-        exception_handler: dict[Type[Exception], Callable] | None = None,
+        exception_handler: dict[Type[Exception], Callable | tuple[Callable, dict[str, Any]]] | None = None,
         exit_code_critical: int | None = None,
         target_configs_md: dict[str, _mdit.MDTargetConfig | dict] | None = None,
         target_configs_rich: dict[str, _mdit.RichTargetConfig | dict] | None = None,
@@ -94,7 +95,7 @@ class Logger:
             color="muted",
             icon="🔘",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#6c757d", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(103, 115, 132), bold=True),
             ),
 
         ),
@@ -102,35 +103,35 @@ class Logger:
             color="success",
             icon="✅",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#28a745", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(0, 47, 23), bold=True),
             ),
         ),
         level_style_info: LogLevelStyle = _style.log_level(
             color="info",
             icon="ℹ️",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#17a2b8", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(6, 36, 93), bold=True),
             ),
         ),
         level_style_notice: LogLevelStyle = _style.log_level(
             color="warning",
             icon="❗",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#f0b37e", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(101, 42, 2), bold=True),
             ),
         ),
         level_style_warning: LogLevelStyle = _style.log_level(
             color="warning",
             icon="🚨",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#f0b37e", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(101, 42, 2), bold=True),
             ),
         ),
         level_style_error: LogLevelStyle = _style.log_level(
             color="danger",
             icon="🚫",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#dc3545", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(78, 17, 27), bold=True),
             ),
         ),
         level_style_critical: LogLevelStyle = _style.log_level(
@@ -138,7 +139,7 @@ class Logger:
             opened=True,
             icon="⛔",
             rich_config=_mdit.target.rich.PanelConfig(
-                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor="#dc3545", bold=True),
+                title_style=_mdit.target.rich.StyleConfig(color="#fff", bgcolor=(78, 17, 27), bold=True),
             ),
         ),
         prefix_caller_name: str = "🔔 ",
@@ -319,8 +320,7 @@ class Logger:
         title: str | None = None,
         key: str | None = None,
         conditions: str | list[str] | None = None,
-        handler: dict[Type[Exception], Callable] | None = None,
-        **handler_kwargs,
+        handler: dict[Type[Exception], Callable | tuple[Callable, dict[str, Any]]] | None = None,
     ):
         """Decorator for sectioning a function or method."""
         def section_decorator(func: Callable):
@@ -331,22 +331,28 @@ class Logger:
                 try:
                     result = func(*args, **kwargs)
                 except Exception as e:
-                    return exception_handler(self._exception_handler | handler, e, func, args, kwargs)
+                    return exception_handler(handler, e, func, args, kwargs)
                 else:
                     if title:
                         self.section_end()
                     return result
             return section_wrapper
 
-        def exception_handler(handlers, e, func, args, kwargs):
-            for exc_type, exc_handler in handlers.items():
-                if isinstance(e, exc_type):
-                    to_raise, return_val = exc_handler(self, e, func, args, kwargs, **handler_kwargs)
-                    if title:
-                        self.section_end()
-                    if to_raise:
-                        raise to_raise
-                    return return_val
+        def exception_handler(section_handler, e, func, args, kwargs):
+            for handler_dict in (section_handler, self._exception_handler):
+                for exc_type, handler_specs in handler_dict.items():
+                    if isinstance(e, exc_type):
+                        if isinstance(handler_specs, (list, tuple)):
+                            exc_handler, handler_kwargs = handler_specs
+                        else:
+                            exc_handler = handler_specs
+                            handler_kwargs = {}
+                        to_raise, return_val = exc_handler(self, e, func, args, kwargs, **handler_kwargs)
+                        if title:
+                            self.section_end()
+                        if to_raise:
+                            raise to_raise
+                        return return_val
             if title:
                 self.section_end()
             raise e
@@ -367,6 +373,8 @@ class Logger:
             level=self._next_section_num,
             explicit_number=True,
         )
+        section_num = ".".join(str(num) for num in self._next_section_num)
+        self._curr_section_name = f"{section_num}. {title}"
         if self._realtime_levels:
             self._print(heading.source(target="console"))
         if not self._doc:
@@ -621,19 +629,23 @@ class Logger:
             sec_num.append(group_title)
             group_title = sec_num
         annotation_type = self._get_github_annotation_type(level.level)
+        group_content = []
         if annotation_type:
-            self._actionman_logger.annotation(
+            annotation_str = self._actionman_logger.annotation(
                 typ=annotation_type,
-                message="See the logs for details.",
                 title=title,
+                message=f"Click to see details in workflow log section {self._curr_list_key}.",
                 filename=file,
                 line_start=line,
                 line_end=line_end,
                 column_start=column,
                 column_end=column_end,
+                out=False,
             )
+            group_content.append(annotation_str)
+        group_content.append(dropdown_rich)
         self._actionman_logger.group(
-            dropdown_rich,
+            *group_content,
             title=group_title,
         )
         return
