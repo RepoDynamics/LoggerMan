@@ -349,13 +349,9 @@ class Logger:
                             exc_handler = handler_specs
                             handler_kwargs = {}
                         to_raise, return_val = exc_handler(self, e, func, args, kwargs, **handler_kwargs)
-                        if title:
-                            self.section_end()
                         if to_raise:
                             raise to_raise
                         return return_val
-            if title:
-                self.section_end()
             raise e
 
         handler = handler or {}
