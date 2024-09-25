@@ -177,7 +177,7 @@ class Logger:
             "critical": _LogLevelData(level=LogLevel.CRITICAL, style=level_style_critical),
         }
         self._target_configs_md = target_configs_md
-        self._target_configs_rich = target_configs_rich
+        self._target_configs_rich = target_configs_rich or {"console": _mdit.target.console()}
         self._target_default_md = target_default_md
         self._target_default_rich = target_default_rich
         in_github = github if github is not None else _actionman.in_gha()
@@ -368,10 +368,12 @@ class Logger:
     ):
         if not self._initialized:
             self.initialize()
+        heading_configs = self._target_configs_rich[self._target_default_rich].heading
         heading = _mdit.element.heading(
             title,
             level=self._next_section_num,
             explicit_number=True,
+            config_rich=heading_configs[min(len(self._next_section_num), len(heading_configs)) - 1]
         )
         section_num = ".".join(str(num) for num in self._next_section_num)
         self._curr_section_name = f"{section_num}. {title}"
