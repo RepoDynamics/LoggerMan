@@ -628,26 +628,22 @@ class Logger:
             sec_num = rich.text.Text(f"{list_number:>3}. ")
             sec_num.append(group_title)
             group_title = sec_num
+        self._actionman_logger.group(
+            dropdown_rich,
+            title=group_title,
+        )
         annotation_type = self._get_github_annotation_type(level.level)
-        group_content = []
         if annotation_type:
-            annotation_str = self._actionman_logger.annotation(
+            self._actionman_logger.annotation(
                 typ=annotation_type,
                 title=title,
-                message=f"Click to see details in workflow log section {self._curr_section_name}.",
+                message=f"Click on the title above to see details.",
                 filename=file,
                 line_start=line,
                 line_end=line_end,
                 column_start=column,
                 column_end=column_end,
-                out=False,
             )
-            group_content.append(annotation_str)
-        group_content.append(dropdown_rich)
-        self._actionman_logger.group(
-            *group_content,
-            title=group_title,
-        )
         return
 
     def _get_sig(self, level: LogLevelStyle, stack_up: int = 0) -> _mdit.MDContainer | None:
