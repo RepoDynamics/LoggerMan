@@ -634,7 +634,7 @@ class Logger:
             annotation_str = self._actionman_logger.annotation(
                 typ=annotation_type,
                 title=title,
-                message=f"Click to see details in workflow log section {self._curr_list_key}.",
+                message=f"Click to see details in workflow log section {self._curr_section_name}.",
                 filename=file,
                 line_start=line,
                 line_end=line_end,
