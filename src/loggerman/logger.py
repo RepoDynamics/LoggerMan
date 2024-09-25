@@ -7,6 +7,7 @@ import inspect as _inspect
 import sys as _sys
 import traceback as _traceback
 from functools import wraps as _wraps
+from pathlib import Path as _Path
 
 import actionman as _actionman
 import mdit as _mdit
@@ -708,11 +709,19 @@ class Logger:
     def _get_caller_name(stack_up: int = 0) -> str:
         stack = _inspect.stack()
         # The caller is the second element in the stack list
-        caller_frame = stack[2 + stack_up]
-        module = _inspect.getmodule(caller_frame[0])
-        module_name = module.__name__ if module else "<module>"
+        caller_frame = stack[stack_up + 1]
+        caller_module = _inspect.getmodule(caller_frame.frame)
+        if caller_module:
+            caller_module_name = caller_module.__name__
+        else:
+            caller_filename = caller_frame.filename
+            caller_filepath = _Path(caller_filename)
+            caller_module_name = caller_filepath.stem
         # Get the function or method name
         func_name = caller_frame.function
         # Combine them to get a fully qualified name
-        fully_qualified_name = f"{module_name}.{func_name}"
+        if func_name == "<module>":
+            fully_qualified_name = f"{caller_module_name}:{caller_frame.lineno}"
+        else:
+            fully_qualified_name = f"{caller_module_name}.{func_name}"
         return fully_qualified_name
