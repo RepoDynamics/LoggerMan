@@ -398,7 +398,7 @@ class Logger:
     def section_end(self, target_level: int | None = None):
         target_level = target_level or self.current_section_level - 1
         self._doc.close_section(target_level=target_level)
-        self._next_section_num = self._next_section_num[:target_level]
+        self._next_section_num = self._next_section_num[:target_level + 1]
         self._next_section_num[-1] += 1
         self._out_of_section = True
         self._curr_list_key = None
