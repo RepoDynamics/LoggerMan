@@ -391,11 +391,15 @@ class Logger:
         self._next_section_num.append(1)
         return
 
-    def section_end(self):
-        self._doc.close_section()
-        if len(self._next_section_num) > 1:
-            self._next_section_num.pop()
-            self._next_section_num[-1] += 1
+    @property
+    def current_section_level(self) -> int:
+        return self._doc.current_section_level
+
+    def section_end(self, target_level: int | None = None):
+        target_level = target_level or self.current_section_level - 1
+        self._doc.close_section(target_level=target_level)
+        self._next_section_num = self._next_section_num[:target_level]
+        self._next_section_num[-1] += 1
         self._out_of_section = True
         self._curr_list_key = None
         return
