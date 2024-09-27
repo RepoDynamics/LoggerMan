@@ -8,6 +8,7 @@ import sys as _sys
 import traceback as _traceback
 from functools import wraps as _wraps
 from pathlib import Path as _Path
+from contextlib import contextmanager as _contextmanager
 
 import actionman as _actionman
 import mdit as _mdit
@@ -356,6 +357,18 @@ class Logger:
 
         handler = handler or {}
         return section_decorator
+
+    @_contextmanager
+    def sectioning(
+        self,
+        title: str,
+        key: str | None = None,
+        conditions: str | list[str] | None = None,
+    ):
+        self.section(title=title, key=key, conditions=conditions)
+        yield
+        self.section_end()
+        return
 
     def section(
         self,
