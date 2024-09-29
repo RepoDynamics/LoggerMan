@@ -71,7 +71,6 @@ class Logger:
         self._prefix_caller_name: str = ""
         self._prefix_time: str = ""
         self._actionman_logger: _actionman.log.Logger | None = None
-        self._curr_section_name: str | None = None
         return
 
     @property
@@ -319,7 +318,7 @@ class Logger:
 
     def sectioner(
         self,
-        title: str | None = None,
+        title: ContainerContentInputType = None,
         key: str | None = None,
         conditions: str | list[str] | None = None,
         handler: dict[Type[Exception], Callable | tuple[Callable, dict[str, Any]]] | None = None,
@@ -361,7 +360,7 @@ class Logger:
     @_contextmanager
     def sectioning(
         self,
-        title: str,
+        title: ContainerContentInputType,
         key: str | None = None,
         conditions: str | list[str] | None = None,
     ):
@@ -372,7 +371,7 @@ class Logger:
 
     def section(
         self,
-        title: str,
+        title: ContainerContentInputType,
         key: str | None = None,
         conditions: str | list[str] | None = None,
     ):
@@ -385,8 +384,6 @@ class Logger:
             explicit_number=True,
             config_rich=heading_configs[min(len(self._next_section_num), len(heading_configs)) - 1]
         )
-        section_num = ".".join(str(num) for num in self._next_section_num)
-        self._curr_section_name = f"{section_num}. {title}"
         if self._realtime_levels:
             self._print(heading.source(target="console"))
         if not self._doc:
