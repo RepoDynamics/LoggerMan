@@ -6,13 +6,14 @@ from typing import NamedTuple as _NamedTuple, Sequence as _Sequence, TYPE_CHECKI
 import inspect as _inspect
 import sys as _sys
 import traceback as _traceback
-from functools import wraps as _wraps
+from functools import wraps as _wraps, partial as _partial
 from pathlib import Path as _Path
 from contextlib import contextmanager as _contextmanager
 
 import actionman as _actionman
 import mdit as _mdit
 from exceptionman import Traceback as _Traceback
+import pyserials as _ps
 import rich
 import rich.traceback
 import rich._inspect
@@ -32,6 +33,7 @@ if _TYPE_CHECKING:
     from mdit.protocol import MDTargetConfig, RichTargetConfig, ContainerContentInputType
     from mdit import MDContainer
     from loggerman.style import LogLevelStyle
+    from loggerman.protocol import Serializable
 
 
 class LogLevel(_Enum):
@@ -315,6 +317,31 @@ class Logger:
             safe_box=safe_box,
         )
         return _mdit.element.rich(panel)
+
+    @staticmethod
+    def data_block(
+        data: Serializable,
+        output: Literal["yaml", "json", "toml"] = "yaml",
+        caption: Stringable | None = None,
+        line_num: bool = False,
+        line_num_start: int | None = None,
+        emphasize_lines: list[int] | None = None,
+        indent: int = 4,
+        sort_keys: bool = False,
+    ):
+        str_writer = {
+            "yaml": _ps.write.to_yaml_string,
+            "json": _partial(_ps.write.to_json_string, sort_keys=sort_keys, indent=indent),
+            "toml": _partial(_ps.write.to_toml_string, sort_keys=sort_keys),
+        }[output]
+        return _mdit.element.code_block(
+            str_writer(data),
+            language=output,
+            caption=caption,
+            line_num=line_num,
+            line_num_start=line_num_start,
+            emphasize_lines=emphasize_lines,
+        )
 
     def sectioner(
         self,
