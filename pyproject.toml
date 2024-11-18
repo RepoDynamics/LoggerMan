@@ -17,14 +17,14 @@ namespaces = true
 # ----------------------------------------- Project Metadata -------------------------------------
 #
 [project]
-version = "0.0.0.dev65"
+version = "0.0.0.dev66"
 name = "LoggerMan"
 dependencies = [
-    "MDit == 0.0.0.dev35",
-    "PySerials == 0.0.0.dev38",
+    "MDit == 0.0.0.dev36",
+    "PySerials == 0.0.0.dev39",
     "ActionMan == 0.0.0.dev24",
     "ProtocolMan == 0.0.0.dev2",
-    "ExceptionMan == 0.0.0.dev35",
+    "ExceptionMan == 0.0.0.dev36",
     "pydantic",
     "rich",
 ]
