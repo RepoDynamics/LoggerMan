@@ -1,7 +1,7 @@
-MDit == 0.0.0.dev41
-PySerials == 0.0.0.dev44
+MDit == 0.0.0.dev42
+PySerials == 0.0.0.dev45
 ActionMan == 0.0.0.dev24
 ProtocolMan == 0.0.0.dev2
-ExceptionMan == 0.0.0.dev41
+ExceptionMan == 0.0.0.dev42
 pydantic
 rich
