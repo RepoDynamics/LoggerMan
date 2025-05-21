@@ -3,7 +3,6 @@ from __future__ import annotations
 from enum import Enum as _Enum
 import datetime as _datetime
 from typing import NamedTuple as _NamedTuple, Sequence as _Sequence, TYPE_CHECKING as _TYPE_CHECKING
-import inspect as _inspect
 import sys as _sys
 import traceback as _traceback
 from functools import wraps as _wraps, partial as _partial
@@ -13,14 +12,13 @@ from contextlib import contextmanager as _contextmanager
 import actionman as _actionman
 import mdit as _mdit
 from exceptionman import Traceback as _Traceback
+import pkgdata as _pkgdata
 import pyserials as _ps
 import rich
-import rich.traceback
 import rich._inspect
 import rich.pretty
 import rich.panel
 import rich.box
-import rich.markdown
 import rich.text
 
 from loggerman import style as _style
@@ -30,7 +28,7 @@ if _TYPE_CHECKING:
     from types import ModuleType, TracebackType
     from typing import Literal, Sequence, Callable, Type, Iterable, Any
     from protocolman import Stringable
-    from mdit.protocol import MDTargetConfig, RichTargetConfig, ContainerContentInputType
+    from mdit.protocol import ContainerContentInputType
     from mdit import MDContainer
     from loggerman.style import LogLevelStyle
     from loggerman.protocol import Serializable
@@ -457,7 +455,7 @@ class Logger:
         stack_up: int = 0,
     ):
         if self._out_of_section:
-            self.section(title=self._get_caller_name(stack_up+1))
+            self.section(title=_pkgdata.get_caller_name(stack_up=stack_up+1, lineno=True))
         if self._list_entries and self._curr_list_key is None:
             self._curr_list_key = self._doc.current_section.body.append(
                 content=_mdit.element.ordered_list(
@@ -693,7 +691,7 @@ class Logger:
         signature = []
         for sig in level.signature:
             if sig == "caller_name":
-                caller = self._get_caller_name(stack_up=stack_up + 1)
+                caller = _pkgdata.get_caller_name(stack_up=stack_up+1, lineno=True)
                 signature.append(_mdit.inline_container(self._prefix_caller_name, _mdit.element.code_span(caller)))
             if sig == "time":
                 timestamp = _datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -742,24 +740,3 @@ class Logger:
             LogLevel.CRITICAL: "error",
         }
         return mapping[level] if level in mapping else None
-
-    @staticmethod
-    def _get_caller_name(stack_up: int = 0) -> str:
-        stack = _inspect.stack()
-        # The caller is the second element in the stack list
-        caller_frame = stack[stack_up + 1]
-        caller_module = _inspect.getmodule(caller_frame.frame)
-        if caller_module:
-            caller_module_name = caller_module.__name__
-        else:
-            caller_filename = caller_frame.filename
-            caller_filepath = _Path(caller_filename)
-            caller_module_name = caller_filepath.stem
-        # Get the function or method name
-        func_name = caller_frame.function
-        # Combine them to get a fully qualified name
-        if func_name == "<module>":
-            fully_qualified_name = f"{caller_module_name}:{caller_frame.lineno}"
-        else:
-            fully_qualified_name = f"{caller_module_name}.{func_name}"
-        return fully_qualified_name
